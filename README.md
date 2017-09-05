@@ -9,6 +9,8 @@ POSIX/SystemV/Native Shared Memory
 * use of Manager is required to enforce access rules in different processes via proxy objects
 * use of context is all that's required for memory management (ensures free-ing) when access rules unneeded
 
+* existing sharedctypes submodule uses a single shared memory segment through the heap submodule with its own memory management implementation to "malloc" space for allowed ctypes and then "free" that space when no longer used, recycling it for use again from the shared memory segment
+
 * Use Cases
     * Want #1:
         ```
@@ -43,7 +45,7 @@ POSIX/SystemV/Native Shared Memory
         print(results)
         ```
 
-    * Want #3:
+    * Want (note the pseudocode in those lambdas) #3:
         ```
         shm = mp.attach_or_create_shmem("unique_id_003")
         local_r = np.random.random_sample((4000,))

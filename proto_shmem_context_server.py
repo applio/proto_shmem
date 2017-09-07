@@ -165,7 +165,7 @@ class SharedList(SharedNDArray):
     def extend(self, values):
         arr_of_multiple = np.array(values, dtype=self.array.dtype)
         shared_array = SharedNDArray.copy(
-                np.concatenate([self.array, arr_of_multiple]))
+            np.concatenate([self.array, arr_of_multiple]))
         self.allocated_size = -1  # TODO: overallocate more than needed
         self.replace_held_shared_array(shared_array)
 
@@ -186,6 +186,13 @@ class SharedList(SharedNDArray):
         self.allocated_size = -1  # TODO: overallocate more than needed
         self.replace_held_shared_array(shared_array)
         return retval
+
+    def remove(self, value):
+        position = self.index(value)
+        shared_array = SharedNDArray.copy(
+            np.concatenate([self.array[:position], self.array[position+1:]]))
+        self.allocated_size = -1  # TODO: overallocate more than needed
+        self.replace_held_shared_array(shared_array)        
 
     def reverse(self):
         self.array[:] = self.array[::-1]
@@ -214,7 +221,7 @@ class SharedListProxy(BaseSharedListProxy):
     _exposed_ = ('_getstate',
                  '__contains__', '__getitem__', '__len__', '__str__',
                  'append', 'count', 'extend', 'index',
-                 'pop') + BaseSharedListProxy._exposed_
+                 'pop', 'remove',) + BaseSharedListProxy._exposed_
 
     def __init__(self, *args, **kwargs):
         BaseProxy.__init__(self, *args, **kwargs)
@@ -257,6 +264,11 @@ class SharedListProxy(BaseSharedListProxy):
 
     def pop(self, position=None):
         retval = self._callmethod('pop', (position,))
+        self.attach_object()
+        return retval
+
+    def remove(self, value=None):
+        retval = self._callmethod('remove', (value,))
         self.attach_object()
         return retval
 

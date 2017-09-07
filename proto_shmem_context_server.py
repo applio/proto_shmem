@@ -3,8 +3,8 @@
 ### it needs to persist inside the process that owns the Server.
 
 import os
-from multiprocessing.managers import BaseProxy, MakeProxyType, SyncManager, \
-                                     Server
+from multiprocessing.managers import BaseProxy, MakeProxyType, AutoProxy, \
+                                     DictProxy, SyncManager, Server
 import multiprocessing as mp
 import numpy as np
 from shared_ndarray import SharedNDArray, posix_ipc
@@ -68,7 +68,11 @@ class AugmentedServer(Server):
         print(f"AugmentedServer started by pid {os.getpid()}")
 
     def create(self, c, typeid, *args, **kwargs):
-        kwargs['shared_memory_context'] = self.shared_memory_context
+        # Unless set up as a shared proxy, don't make shared_memory_context
+        # a standard part of kwargs.  This makes things easier for supplying
+        # simple functions.
+        if hasattr(self.registry[typeid][-1], "_shared_memory_proxy"):
+            kwargs['shared_memory_context'] = self.shared_memory_context
         return Server.create(self, c, typeid, *args, **kwargs)
 
     def shutdown(self, c):
@@ -197,6 +201,8 @@ class SharedListProxy(BaseSharedListProxy):
     # of those methods can be performed better in the local process rather
     # than asking the process with ownership to have to perform them all.
 
+    _shared_memory_proxy = True
+
     _exposed_ = ('_getstate',
                  '__contains__', '__getitem__', '__len__', '__str__',
                  'count', 'index', 'pop') + BaseSharedListProxy._exposed_
@@ -234,6 +240,12 @@ class SharedListProxy(BaseSharedListProxy):
         retval = self._callmethod('pop', (position,))
         self.attach_object()
         return retval
+
+    def __getstate__(self):
+        return (self.shared_memory_context_name, self.segment_names)
+
+    def __setstate__(self, state):
+        self.__init__(*state)
 
     def __dir__(self):
         return sorted(self._exposed_[1:])
@@ -341,17 +353,37 @@ def main04_single(scale=1000, iterations=400000):
         shm.unlink()
 
 def main05():
-    m = SharedMemoryManager("unique_id_005")
-    try:
+    import sys
+    lookup_table = {}
+    authkey = b'howdy'
+    mp.current_process().authkey = authkey
+    SharedMemoryManager.register("get_lookup_table", callable=lambda: lookup_table, proxytype=DictProxy)
+
+    if sys.argv[-1] == 'master':
+        m = SharedMemoryManager(address=('127.0.0.1', 5005), authkey=authkey)
         m.start()
-        print(f"parent running as pid {os.getpid()}")
+        print(f"master running as pid {os.getpid()}")
+
         w = m.list([3, 4, 5])
-    finally:
-        m.unlink()
+        lookup_table = m.get_lookup_table()
+        lookup_table['w'] = w
+
+    else:
+        m = SharedMemoryManager(address=('127.0.0.1', 5005), authkey=authkey)
+        m.connect()
+        print(f"remote running as pid {os.getpid()}")
+
+        lookup_table = m.get_lookup_table()
+        w = lookup_table['w']
+
+    return m, lookup_table, w
+
 
 
 if __name__ == '__main__':
-    main04_shmem_parallel(scale=10000)
+    #main04_shmem_parallel(scale=10000)
     #main04_single(scale=10000)
+
+    m, lookup_table, w = main05()
 
 

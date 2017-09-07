@@ -21,6 +21,13 @@ class SharedMemoryContext:
         print(f"Registering segment {segment.name} in pid {os.getpid()}")
         self.segment_names.append(segment.name)
 
+    def destroy_segment(self, segment_name):
+        print(f"Destroying segment {segment_name} in pid {os.getpid()}")
+        self.segment_names.remove(segment_name)
+        segment = posix_ipc.SharedMemory(segment_name)
+        segment.close_fd()
+        segment.unlink()
+
     def unlink(self):
         for segment_name in self.segment_names:
             print(f"Unlinking segment {segment_name} in pid {os.getpid()}")
@@ -103,16 +110,22 @@ class SharedMemoryManager(SyncManager):
 class SharedList(SharedNDArray):
 
     def __init__(self, iterable, *, shared_memory_context):
+        self.shared_memory_context = shared_memory_context
         if isinstance(iterable, (list, tuple)):
             # Skip creation of short-lived duplicate list.
             shared_array = SharedNDArray.copy(np.array(iterable))
         else:
             shared_array = SharedNDArray.copy(np.array(list(iterable)))
         self.allocated_size = -1  # TODO: overallocate more than needed
+        self.replace_held_shared_array(shared_array, destroy_old=False)
+
+    def replace_held_shared_array(self, shared_array, destroy_old=True):
+        if destroy_old:
+            self.shared_memory_context.destroy_segment(self._shm.name)
         self.array = shared_array.array
         self._shm = shared_array._shm
         self._buf = shared_array._buf
-        shared_memory_context.register_segment(self._shm)
+        self.shared_memory_context.register_segment(self._shm)
         # Preserve it or the SharedNDArray kills it and all these mutation
         # operations will fail catastrophically.
         # But if it's preserved, then its refcount won't drop to 0 even
@@ -153,6 +166,15 @@ class SharedList(SharedNDArray):
     def insert(self, value):
         raise NotImplementedError
 
+    def pop(self, position=None):
+        # TODO: implement use of position
+        retval = self.array[-1]
+        # TODO: fix problem when shrinking to length of 0
+        shared_array = SharedNDArray.copy(self.array[:-1])
+        self.allocated_size = -1  # TODO: overallocate more than needed
+        self.replace_held_shared_array(shared_array)
+        return retval
+
     def reverse(self):
         self.array[:] = self.array[::-1]
 
@@ -176,9 +198,8 @@ class SharedListProxy(BaseSharedListProxy):
     # than asking the process with ownership to have to perform them all.
 
     _exposed_ = ('_getstate',
-                 '__contains__', '__getitem__', '__len__',
-                 '__setitem__', '__str__', 'append', 'count', 'extend',
-                 'index', 'insert', 'reverse', 'sort')
+                 '__contains__', '__getitem__', '__len__', '__str__',
+                 'count', 'index', 'pop') + BaseSharedListProxy._exposed_
 
     def __init__(self, *args, **kwargs):
         BaseProxy.__init__(self, *args, **kwargs)
@@ -208,6 +229,11 @@ class SharedListProxy(BaseSharedListProxy):
             return np.argwhere(self.shared_array.array == value)[0][0]
         except IndexError:
             raise ValueError(f"{value} is not in list")
+
+    def pop(self, position=None):
+        retval = self._callmethod('pop', (position,))
+        self.attach_object()
+        return retval
 
     def __dir__(self):
         return sorted(self._exposed_[1:])

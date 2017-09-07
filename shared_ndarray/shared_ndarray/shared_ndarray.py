@@ -37,7 +37,10 @@ class SharedNDArray:
         """
         size = int(np.prod(shape)) * np.dtype(dtype).itemsize
         if name:
-            self._shm = posix_ipc.SharedMemory(name)
+            try:
+                self._shm = posix_ipc.SharedMemory(name)
+            except posix_ipc.ExistentialError as ee:
+                raise ee.__class__(f"{ee.args[0]}; requested name: {name}")
         else:
             self._shm = posix_ipc.SharedMemory(None, posix_ipc.O_CREX, size=size)
         self._buf = mmap.mmap(self._shm.fd, size)
@@ -48,6 +51,9 @@ class SharedNDArray:
         # TODO: Should this use np.memmap() instead?  What would impact to performance be?
         self._buf.seek(0)
         self._buf.write(self.array.tobytes())
+
+    def __getattr__(self, name):
+        return getattr(self.array, name)
 
     @classmethod
     def copy(cls, arr):
@@ -65,6 +71,7 @@ class SharedNDArray:
         """
         new_shm = cls.zeros_like(arr)
         new_shm.array[:] = arr
+        new_shm.flush()
         return new_shm
 
     @classmethod

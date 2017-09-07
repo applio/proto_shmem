@@ -1,33 +1,39 @@
+### SharedMemoryContext needs to be held inside mp.manager.Server
+### and not inside SharedMemoryManager as attempted here because
+### it needs to persist inside the process that owns the Server.
+
 import os
-from multiprocessing import managers
+from multiprocessing.managers import BaseProxy, MakeProxyType, SyncManager
 import multiprocessing as mp
 import numpy as np
 from shared_ndarray import SharedNDArray, posix_ipc
 
 
 class SharedMemoryContext:
+    "Manages one or more shared memory segments."
 
     def __init__(self, name, segment_names=[]):
-        self.name = name
+        self.shared_memory_context_name = name
         self.segment_names = segment_names
 
     def register_segment(self, segment):
-        print("Registering segment:", segment.name)
+        print(f"Registering segment {segment.name} in pid {os.getpid()}")
         self.segment_names.append(segment.name)
 
-    def close(self):
+    def unlink(self):
         for segment_name in self.segment_names:
-            print("Unlinking segment:", segment_name)
+            print(f"Unlinking segment {segment_name} in pid {os.getpid()}")
             segment = posix_ipc.SharedMemory(segment_name)
             segment.close_fd()
             segment.unlink()
         self.segment_names[:] = []
 
     def __del__(self):
-        self.close()
+        print(f"somebody called {self.__class__.__name__}.__del__: {os.getpid()}")
+        self.unlink()
 
     def __getstate__(self):
-        return (self.name, self.segment_names)
+        return (self.shared_memory_context_name, self.segment_names)
 
     def __setstate__(self, state):
         self.__init__(*state)
@@ -46,9 +52,144 @@ class SharedMemoryContext:
         return shared_array
 
 
-class SharedMemoryManager(managers.SyncManager, SharedMemoryContext):
-    pass
+class SharedMemoryManager(SyncManager, SharedMemoryContext):
+    """Like SyncManager but also manages a shared memory context.
 
+    TODO: relocate to managers submodule."""
+
+    def __init__(self, *args, **kwargs):
+        SyncManager.__init__(self, *args, **kwargs)
+        #SharedMemoryContext.__init__(self, "shmm_{0!s}_{1!s}".format(self._address, os.getpid()))
+        SharedMemoryContext.__init__(self, f"shmm_{self._address}_{os.getpid()}")
+        print(f"{self.__class__.__name__} created by pid {os.getpid()}")
+
+    def _create(self, typeid, *args, **kwargs):
+        kwargs['shared_memory_manager'] = self
+        return SyncManager._create(self, typeid, *args, **kwargs)
+
+    def __del__(self):
+        print(f"{self.__class__.__name__} told to die by pid {os.getpid()}")
+        pass
+
+
+def shared_list(iterable, *, shared_memory_manager):
+    """Analog to built-in list that is stored in shared memory segment.
+
+    TODO: Add overallocation to shared memory segment and reuse during list expansion.
+    """
+    if isinstance(iterable, (list, tuple)):
+        # Skip creation of short-lived duplicate.
+        shared_array = SharedNDArray.copy(np.array(iterable))
+    else:
+        shared_array = SharedNDArray.copy(np.array(list(iterable)))
+    shared_memory_manager.register_segment(shared_array._shm)
+    return shared_array
+
+
+class SharedList(SharedNDArray):
+
+    def __init__(self, iterable, *, shared_memory_manager):
+        if isinstance(iterable, (list, tuple)):
+            # Skip creation of short-lived duplicate list.
+            shared_array = SharedNDArray.copy(np.array(iterable))
+        else:
+            shared_array = SharedNDArray.copy(np.array(list(iterable)))
+        self.allocated_size = -1  # TODO: overallocate more than needed
+        self.array = shared_array.array
+        self._shm = shared_array._shm
+        self._buf = shared_array._buf
+        shared_memory_manager.register_segment(self._shm)
+        # self-preservation otherwise SharedNDArray.__del__ will kill our shared memory segment before we can use it here
+        self._shared_array = shared_array
+
+    def __contains__(self, value):
+        return self.array.__contains__(value)
+
+    def __getitem__(self, position):
+        return self.array.__getitem__(position)
+
+    def __setitem__(self, position, value):
+        self.array.__setitem__(position, value)
+
+    def _getstate(self):
+        return self.array.shape, self.array.dtype, self._shm.name
+
+    def append(self, value):
+        raise NotImplementedError
+
+    def count(self, value):
+        return len(np.argwhere(self.array == value))
+
+    def index(self, value):
+        try:
+            return np.argwhere(self.array == value)[0][0]
+        except IndexError:
+            raise ValueError(f"{value!r} is not in list")
+
+    def sort(self):
+        self.array.sort()
+
+
+BaseSharedSequenceProxy = MakeProxyType(
+    'BaseSharedSequenceProxy',
+    ('__contains__', '__getitem__', '__len__', 'count', 'index'))
+
+
+class SharedListProxy(BaseProxy):
+    # Really no point in deriving from BaseSharedSequenceProxy because most
+    # of those methods can be performed better in the local process rather
+    # than asking the process with ownership to have to perform them all.
+
+    _exposed_ = ('_getstate', '__contains__', '__getitem__', '__len__',
+                 '__setitem__', '__str__', 'append', 'count',
+                 'index', 'sort')
+
+    def attach_object(self):
+        "Attach to existing object in shared memory segment."
+        self.shared_array = SharedNDArray(*(self._callmethod('_getstate')))
+
+    def __contains__(self, value):
+        return self.shared_array.array.__contains__(value)
+
+    def __getitem__(self, position):
+        return self.shared_array.array.__getitem__(position)
+
+    def __len__(self):
+        return len(self.shared_array.array)
+
+    def __setitem__(self, position, value):
+        return self._callmethod('__setitem__', (position, value))
+
+    def __str__(self):
+        return str(list(self))
+
+    def count(self, value):
+        return len(np.argwhere(self.shared_array.array == value))
+
+    def index(self, value):
+        try:
+            return np.argwhere(self.shared_array.array == value)[0][0]
+        except IndexError:
+            raise ValueError(f"{value} is not in list")
+
+    def sort(self):
+        # Must be performed by process with ownership.
+        return self._callmethod('sort', ())
+
+    def __dir__(self):
+        return sorted(self._exposed_[1:])
+
+
+#SharedMemoryManager.register('list', shared_list, SharedListProxy)
+SharedMemoryManager.register('list', SharedList, SharedListProxy)
+
+'''
+# For ease of playing
+import proto_shmem_context
+m = proto_shmem_context.SharedMemoryManager()
+m.start()
+w = m.list([3, 4, 5], shared_memory_manager=m)
+'''
 
 def block_multiply(block_arr_tuple, block_size=1000):
     block, arr = block_arr_tuple
@@ -96,7 +237,7 @@ def main01():
         print(np.any(shared_results[0].array == 4))
         print(id(local_r), id(shared_r.array), [id(x.array) for x in shared_results])
     finally:
-        shm.close()
+        shm.unlink()
 
 def main02():
     shm = SharedMemoryContext("unique_id_002")
@@ -111,7 +252,7 @@ def main02():
         print(combined_results[:10], "first 10 of", len(combined_results))
         print(np.all(np.isclose(combined_results, local_r * 4)))
     finally:
-        shm.close()
+        shm.unlink()
 
 def main04_shmem_parallel(scale=1000, iterations=400000):
     shm = SharedMemoryContext("unique_id_001")
@@ -125,7 +266,7 @@ def main04_shmem_parallel(scale=1000, iterations=400000):
         print(np.all(np.isclose(shared_results[0].array, np.ones((scale,)))))
         print(id(local_r), id(shared_r.array), [id(x.array) for x in shared_results])
     finally:
-        shm.close()
+        shm.unlink()
 
 def main04_single(scale=1000, iterations=400000):
     shm = SharedMemoryContext("unique_id_001")
@@ -138,7 +279,16 @@ def main04_single(scale=1000, iterations=400000):
         print(np.all(np.isclose(shared_results[0].array, np.ones((scale,)))))
         print(id(local_r), id(shared_r.array), [id(x.array) for x in shared_results])
     finally:
-        shm.close()
+        shm.unlink()
+
+def main05():
+    m = SharedMemoryManager("unique_id_005")
+    try:
+        m.start()
+        print(f"parent running as pid {os.getpid()}")
+        w = m.list([3, 4, 5])
+    finally:
+        m.unlink()
 
 
 if __name__ == '__main__':

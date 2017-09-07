@@ -35,7 +35,7 @@ class SharedNDArray:
         Raises:
             SharedNDArrayError: if an error occurs.
         """
-        size = int(np.prod(shape)) * np.dtype(dtype).itemsize
+        size = 96 + int(np.prod(shape)) * np.dtype(dtype).itemsize
         if name:
             try:
                 self._shm = posix_ipc.SharedMemory(name)

@@ -153,7 +153,11 @@ class SharedList(SharedNDArray):
         return self.array.shape, self.array.dtype, self._shm.name
 
     def append(self, value):
-        raise NotImplementedError
+        arr_of_one = np.array([value], dtype=self.array.dtype)
+        shared_array = SharedNDArray.copy(
+                np.concatenate([self.array, arr_of_one]))
+        self.allocated_size = -1  # TODO: overallocate more than needed
+        self.replace_held_shared_array(shared_array)
 
     def count(self, value):
         return len(np.argwhere(self.array == value))
@@ -205,7 +209,8 @@ class SharedListProxy(BaseSharedListProxy):
 
     _exposed_ = ('_getstate',
                  '__contains__', '__getitem__', '__len__', '__str__',
-                 'count', 'index', 'pop') + BaseSharedListProxy._exposed_
+                 'append', 'count', 'index',
+                 'pop') + BaseSharedListProxy._exposed_
 
     def __init__(self, *args, **kwargs):
         BaseProxy.__init__(self, *args, **kwargs)
@@ -227,6 +232,11 @@ class SharedListProxy(BaseSharedListProxy):
     def __str__(self):
         return str(list(self))
 
+    def append(self, value):
+        retval = self._callmethod('append', (value,))
+        self.attach_object()
+        return retval
+
     def count(self, value):
         return len(np.argwhere(self.shared_array.array == value))
 
@@ -240,12 +250,6 @@ class SharedListProxy(BaseSharedListProxy):
         retval = self._callmethod('pop', (position,))
         self.attach_object()
         return retval
-
-    def __getstate__(self):
-        return (self.shared_memory_context_name, self.segment_names)
-
-    def __setstate__(self, state):
-        self.__init__(*state)
 
     def __dir__(self):
         return sorted(self._exposed_[1:])

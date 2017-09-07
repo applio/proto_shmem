@@ -1,9 +1,12 @@
 """A pickleable wrapper for sharing NumPy ndarrays between processes using POSIX shared memory."""
 
 import mmap
+import sys
 
 import numpy as np
 import posix_ipc
+
+MINIMUMSHMSIZE = sys.getsizeof(np.array([]))
 
 
 class SharedNDArray:
@@ -35,7 +38,7 @@ class SharedNDArray:
         Raises:
             SharedNDArrayError: if an error occurs.
         """
-        size = 96 + int(np.prod(shape)) * np.dtype(dtype).itemsize
+        size = MINIMUMSHMSIZE + int(np.prod(shape)) * np.dtype(dtype).itemsize
         if name:
             try:
                 self._shm = posix_ipc.SharedMemory(name)

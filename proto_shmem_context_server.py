@@ -162,8 +162,12 @@ class SharedList(SharedNDArray):
     def count(self, value):
         return len(np.argwhere(self.array == value))
 
-    def extend(self, value):
-        raise NotImplementedError
+    def extend(self, values):
+        arr_of_multiple = np.array(values, dtype=self.array.dtype)
+        shared_array = SharedNDArray.copy(
+                np.concatenate([self.array, arr_of_multiple]))
+        self.allocated_size = -1  # TODO: overallocate more than needed
+        self.replace_held_shared_array(shared_array)
 
     def index(self, value):
         try:
@@ -209,7 +213,7 @@ class SharedListProxy(BaseSharedListProxy):
 
     _exposed_ = ('_getstate',
                  '__contains__', '__getitem__', '__len__', '__str__',
-                 'append', 'count', 'index',
+                 'append', 'count', 'extend', 'index',
                  'pop') + BaseSharedListProxy._exposed_
 
     def __init__(self, *args, **kwargs):
@@ -239,6 +243,11 @@ class SharedListProxy(BaseSharedListProxy):
 
     def count(self, value):
         return len(np.argwhere(self.shared_array.array == value))
+
+    def extend(self, value):
+        retval = self._callmethod('extend', (value,))
+        self.attach_object()
+        return retval
 
     def index(self, value):
         try:

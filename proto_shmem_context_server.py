@@ -233,9 +233,10 @@ class SharedListProxy(BaseSharedListProxy):
     _shared_memory_proxy = True
 
     _exposed_ = ('_getstate',
-                 '__contains__', '__getitem__', '__len__', '__str__',
-                 'append', 'clear', 'count', 'extend', 'index', 'insert',
-                 'pop', 'remove',) + BaseSharedListProxy._exposed_
+                 '__contains__', '__getitem__', '__iter__', '__len__',
+                 '__str__', 'append', 'clear', 'count', 'extend', 'index',
+                 'insert', 'pop',
+                 'remove',) + BaseSharedListProxy._exposed_
 
     def __init__(self, *args, **kwargs):
         BaseProxy.__init__(self, *args, **kwargs)
@@ -250,6 +251,9 @@ class SharedListProxy(BaseSharedListProxy):
 
     def __getitem__(self, position):
         return self.shared_array.array.__getitem__(position)
+
+    def __iter__(self):
+        return iter(self.shared_array.array)
 
     def __len__(self):
         return len(self.shared_array.array)

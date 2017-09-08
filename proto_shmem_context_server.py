@@ -1,16 +1,13 @@
-### SharedMemoryContext needs to be held inside mp.manager.Server
-### and not inside SharedMemoryManager as attempted here because
-### it needs to persist inside the process that owns the Server.
-
 import os
 from multiprocessing.managers import BaseProxy, MakeProxyType, AutoProxy, \
                                      DictProxy, SyncManager, Server
 import multiprocessing as mp
 import numpy as np
-from shared_ndarray import SharedNDArray, posix_ipc
+from shared_ndarray.shared_ndarray import SharedNDArray
+import posix_ipc
 
 
-class SharedMemoryContext:
+class SharedMemoryTracker:
     "Manages one or more shared memory segments."
 
     def __init__(self, name, segment_names=[]):
@@ -64,7 +61,7 @@ class AugmentedServer(Server):
     def __init__(self, *args, **kwargs):
         Server.__init__(self, *args, **kwargs)
         self.shared_memory_context = \
-            SharedMemoryContext(f"shmm_{self.address}_{os.getpid()}")
+            SharedMemoryTracker(f"shmm_{self.address}_{os.getpid()}")
         print(f"AugmentedServer started by pid {os.getpid()}")
 
     def create(self, c, typeid, *args, **kwargs):
@@ -303,16 +300,8 @@ class SharedListProxy(BaseSharedListProxy):
         return sorted(self._exposed_[1:])
 
 
-#SharedMemoryManager.register('list', shared_list, SharedListProxy)
 SharedMemoryManager.register('list', SharedList, SharedListProxy)
 
-'''
-# For ease of playing
-import proto_shmem_context
-m = proto_shmem_context.SharedMemoryManager()
-m.start()
-w = m.list([3, 4, 5], shared_memory_manager=m)
-'''
 
 def block_multiply(block_arr_tuple, block_size=1000):
     block, arr = block_arr_tuple
@@ -343,7 +332,7 @@ def block_exponential_4(data_tuple):
 
 
 def main01():
-    shm = SharedMemoryContext("unique_id_001")
+    shm = SharedMemoryTracker("unique_id_001")
     try:
         #local_r = np.random.random_sample((4000,))
         local_r = np.ones((4000,))
@@ -363,7 +352,7 @@ def main01():
         shm.unlink()
 
 def main02():
-    shm = SharedMemoryContext("unique_id_002")
+    shm = SharedMemoryTracker("unique_id_002")
     try:
         local_r = np.ones((4000,))
         shared_r = shm.ndarray(local_r)
@@ -378,7 +367,7 @@ def main02():
         shm.unlink()
 
 def main04_shmem_parallel(scale=1000, iterations=400000):
-    shm = SharedMemoryContext("unique_id_001")
+    shm = SharedMemoryTracker("unique_id_001")
     try:
         local_r = np.random.random_sample((4 * scale,))
         shared_r = shm.ndarray(local_r)
@@ -392,7 +381,7 @@ def main04_shmem_parallel(scale=1000, iterations=400000):
         shm.unlink()
 
 def main04_single(scale=1000, iterations=400000):
-    shm = SharedMemoryContext("unique_id_001")
+    shm = SharedMemoryTracker("unique_id_001")
     try:
         local_r = np.random.random_sample((4 * scale,))
         shared_r = shm.ndarray(local_r)
@@ -408,7 +397,7 @@ def main05():
     import sys
     lookup_table = {}
     authkey = b'howdy'
-    mp.current_process().authkey = authkey
+    mp.current_process().authkey = authkey  # TODO: add this to multiprocessing docs regarding authkey
     SharedMemoryManager.register("get_lookup_table", callable=lambda: lookup_table, proxytype=DictProxy)
 
     if sys.argv[-1] == 'master':

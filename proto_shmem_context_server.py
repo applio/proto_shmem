@@ -155,7 +155,7 @@ class SharedList(SharedNDArray):
     def append(self, value):
         arr_of_one = np.array([value], dtype=self.array.dtype)
         shared_array = SharedNDArray.copy(
-                np.concatenate([self.array, arr_of_one]))
+            np.concatenate([self.array, arr_of_one]))
         self.allocated_size = -1  # TODO: overallocate more than needed
         self.replace_held_shared_array(shared_array)
 
@@ -163,6 +163,9 @@ class SharedList(SharedNDArray):
         shared_array = SharedNDArray.copy(np.array([], dtype=self.array.dtype))
         self.allocated_size = -1  # TODO: overallocate more than needed
         self.replace_held_shared_array(shared_array)
+
+    def copy(self):
+        raise NotImplementedError
 
     def count(self, value):
         return len(np.argwhere(self.array == value))
@@ -180,8 +183,14 @@ class SharedList(SharedNDArray):
         except IndexError:
             raise ValueError(f"{value!r} is not in list")
 
-    def insert(self, value):
-        raise NotImplementedError
+    def insert(self, position, value):
+        arr_of_one = np.array([value], dtype=self.array.dtype)
+        shared_array = SharedNDArray.copy(
+            np.concatenate([self.array[:position],
+                            arr_of_one,
+                            self.array[position:]]))
+        self.allocated_size = -1  # TODO: overallocate more than needed
+        self.replace_held_shared_array(shared_array)
 
     def pop(self, position=None):
         # TODO: implement use of position
@@ -225,7 +234,7 @@ class SharedListProxy(BaseSharedListProxy):
 
     _exposed_ = ('_getstate',
                  '__contains__', '__getitem__', '__len__', '__str__',
-                 'append', 'clear', 'count', 'extend', 'index',
+                 'append', 'clear', 'count', 'extend', 'index', 'insert',
                  'pop', 'remove',) + BaseSharedListProxy._exposed_
 
     def __init__(self, *args, **kwargs):
@@ -270,6 +279,11 @@ class SharedListProxy(BaseSharedListProxy):
             return np.argwhere(self.shared_array.array == value)[0][0]
         except IndexError:
             raise ValueError(f"{value} is not in list")
+
+    def insert(self, position, value):
+        retval = self._callmethod('insert', (position, value))
+        self.attach_object()
+        return retval
 
     def pop(self, position=None):
         retval = self._callmethod('pop', (position,))

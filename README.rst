@@ -26,7 +26,7 @@ Use Cases
 * Want #1:
 ::
 
-   #### in process alpha (same device)
+    #### in process alpha (same device)
     shm_a = mp.attach_or_create_shmem("unique_id_001")  # likely enforce length constraint on name, combine into __init__ args
     m = shm_a.list([4, 5, 6, 7])
     print(m[0])  # prints 4, access through shared memory segment, no serialization
@@ -49,7 +49,7 @@ Use Cases
 * Want #2:
 ::
 
-   shm = mp.attach_or_create_shmem("unique_id_002")
+    shm = mp.attach_or_create_shmem("unique_id_002")
     m = shm.list([4, 5, 6, 7])
     with mp.Pool(processes=4) as p:
         _results = p.map(compute_intensive_func, m)  # Wish: all accesses through shared memory segment, no serialization

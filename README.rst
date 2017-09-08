@@ -8,8 +8,10 @@ POSIX/SystemV/Native Shared Memory
 ----------------------------------
 * tools like posix_ipc look very promising for Linux/BSD variants but not for Windows
 * PostgreSQL has a consistent internal API for offering shared memory across Windows/Unix platforms
-    * based on System V, made NetBSD/OpenBSD happy before they supported POSIX
-    * not immediately extractable but could be done
+
+  * based on System V, made NetBSD/OpenBSD happy before they supported POSIX
+  * not immediately extractable but could be done
+
 * "shared-array", "shared_ndarray", and "sharedmem-numpy" all have interesting implementations for exposing NumPy arrays via shared memory segments
 
 Design
@@ -22,8 +24,9 @@ Design
 Use Cases
 ---------
 * Want #1:
-    ```
-    #### in process alpha (same device)
+::
+
+   #### in process alpha (same device)
     shm_a = mp.attach_or_create_shmem("unique_id_001")  # likely enforce length constraint on name, combine into __init__ args
     m = shm_a.list([4, 5, 6, 7])
     print(m[0])  # prints 4, access through shared memory segment, no serialization
@@ -42,20 +45,20 @@ Use Cases
 
     #### back in process alpha again
     print(m[0])  # prints -1000, access through shared memory segment
-    ```
 
 * Want #2:
-    ```
-    shm = mp.attach_or_create_shmem("unique_id_002")
+::
+
+   shm = mp.attach_or_create_shmem("unique_id_002")
     m = shm.list([4, 5, 6, 7])
     with mp.Pool(processes=4) as p:
         _results = p.map(compute_intensive_func, m)  # Wish: all accesses through shared memory segment, no serialization
         results = p.map(compute_intensive_func_2, enumerate([m] * 4))  # inside accesses m[i] through shared memory segment
     print(results)
-    ```
 
 * Want (note the pseudocode in those lambdas) #3:
-    ```
+::
+
     shm = mp.attach_or_create_shmem("unique_id_003")
     local_r = np.random.random_sample((4000,))
     shared_r = shm.ndarray(local_r)  # probably need to provide mechanism to register this to support numpy
@@ -63,7 +66,6 @@ Use Cases
         _results = p.map(lambda i: shared_r[i::4] = shared_r[i::4] ** 0.5, range(4))  # all through shared memory
         _results = p.map(lambda i: shared_r[1000*i:1000*(i-1)] = shared_r[1000*i:1000*(i-1)] * 4, range(4))  # all shared memory
     print(shared_r)  # access through shared memory
-    ```
 
 TODO
 ----
@@ -71,5 +73,7 @@ TODO
 * evaluate continued use of posix_ipc as a whole or only parts relevant to shared memory segments (not using POSIX message queues or POSIX semaphores at present) or inspired new implementation
 * eliminate the explicit dependency on NumPy's ndarrays but keep it dead simple to create ndarrays in shared memory segments
 * rationalize all this with what's done in multiprocessing.sharedctypes
-    - directly compare performance of sharedctypes's all-in-one segment approach versus multiple segments approach used here so far
+
+  * directly compare performance of sharedctypes's all-in-one segment approach versus multiple segments approach used here so far
+
 * demo performance differences between using shared memory segments versus not with multiprocessing

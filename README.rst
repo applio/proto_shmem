@@ -82,7 +82,7 @@ TODO
 
 * demo performance differences between using shared memory segments versus not with multiprocessing
 * documentation beyond mere examples
-* Lukasz suggestion: auto-proxy handling for simpler classes (easily represented via dict) like ``class C: def __init__(self, a, b): self.a = a; self.b = b"
+* Lukasz suggestion: auto-proxy handling for simpler classes (easily represented via dict) like ``class C: def __init__(self, a, b): self.a = a; self.b = b``
 * Yury suggestion: shared memory segment based queue (but probably not using POSIX message queue in first incarnation at least)
 
 

@@ -78,7 +78,11 @@ TODO
 * rationalize all this with what's done in ``multiprocessing.sharedctypes``
 
   * directly compare performance of sharedctypes's all-in-one segment approach versus multiple segments approach used here so far
+  * enable auto-detection of changes that prompt reloading via buffer protocol as needed (add metadata storage to shared memory segment)
 
 * demo performance differences between using shared memory segments versus not with multiprocessing
 * documentation beyond mere examples
+* Lukasz suggestion: auto-proxy handling for simpler classes (easily represented via dict) like ``class C: def __init__(self, a, b): self.a = a; self.b = b"
+* Yury suggestion: shared memory segment based queue (but probably not using POSIX message queue in first incarnation at least)
+
 

@@ -4,7 +4,8 @@ import mmap
 import sys
 
 import numpy as np
-import posix_ipc
+import shared_memory
+
 
 MINIMUMSHMSIZE = sys.getsizeof(np.array([]))
 
@@ -41,19 +42,18 @@ class SharedNDArray:
         size = MINIMUMSHMSIZE + int(np.prod(shape)) * np.dtype(dtype).itemsize
         if name:
             try:
-                self._shm = posix_ipc.SharedMemory(name)
-            except posix_ipc.ExistentialError as ee:
+                self._shm = shared_memory.SharedMemory(name)
+            except shared_memory.ExistentialError as ee:
                 raise ee.__class__(f"{ee.args[0]}; requested name: {name}")
         else:
-            self._shm = posix_ipc.SharedMemory(None, posix_ipc.O_CREX, size=size)
-        self._buf = mmap.mmap(self._shm.fd, size)
-        self.array = np.ndarray(shape, dtype, self._buf, order='C')
+            self._shm = shared_memory.SharedMemory(None, shared_memory.O_CREX, size=size)
+        self.array = np.ndarray(shape, dtype, self._shm.buf, order='C')
 
     def flush(self):
         # Why is this necessary, if at all?!?
         # TODO: Should this use np.memmap() instead?  What would impact to performance be?
-        self._buf.seek(0)
-        self._buf.write(self.array.tobytes())
+        self._shm.buf.seek(0)
+        self._shm.buf.write(self.array.tobytes())
 
     def __getattr__(self, name):
         return getattr(self.array, name)
@@ -99,8 +99,7 @@ class SharedNDArray:
         self._shm.unlink()
 
     def __del__(self):
-        self._buf.close()
-        self._shm.close_fd()
+        self._shm.close()
 
     def __getstate__(self):
         return self.array.shape, self.array.dtype, self._shm.name

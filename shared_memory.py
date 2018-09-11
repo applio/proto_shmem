@@ -2,7 +2,12 @@ import mmap
 import os
 import random
 import sys
-from posix_ipc import SharedMemory as _PosixSharedMemory, Error, ExistentialError, O_CREX
+try:
+    from posix_ipc import SharedMemory as _PosixSharedMemory, Error, ExistentialError, O_CREX
+except ImportError as ie:
+    if os.name != "nt":
+        # On Windows, posix_ipc is not required to be available.
+        raise ie
 
 
 class WindowsNamedSharedMemory:

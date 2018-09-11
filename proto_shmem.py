@@ -4,7 +4,7 @@ from multiprocessing.managers import BaseProxy, MakeProxyType, AutoProxy, \
 import multiprocessing as mp
 import numpy as np
 from shared_ndarray.shared_ndarray import SharedNDArray
-import posix_ipc
+import shared_memory
 
 
 class SharedMemoryTracker:
@@ -21,14 +21,14 @@ class SharedMemoryTracker:
     def destroy_segment(self, segment_name):
         print(f"Destroying segment {segment_name} in pid {os.getpid()}")
         self.segment_names.remove(segment_name)
-        segment = posix_ipc.SharedMemory(segment_name)
+        segment = shared_memory.SharedMemory(segment_name)
         segment.close_fd()
         segment.unlink()
 
     def unlink(self):
         for segment_name in self.segment_names:
             print(f"Unlinking segment {segment_name} in pid {os.getpid()}")
-            segment = posix_ipc.SharedMemory(segment_name)
+            segment = shared_memory.SharedMemory(segment_name)
             segment.close_fd()
             segment.unlink()
         self.segment_names[:] = []
@@ -125,7 +125,6 @@ class SharedList(SharedNDArray):
             self.shared_memory_context.destroy_segment(self._shm.name)
         self.array = shared_array.array
         self._shm = shared_array._shm
-        self._buf = shared_array._buf
         self.shared_memory_context.register_segment(self._shm)
         # Preserve it or the SharedNDArray kills it and all these mutation
         # operations will fail catastrophically.
@@ -135,7 +134,7 @@ class SharedList(SharedNDArray):
         self._shared_array = shared_array
 
     def __del__(self):
-        self._buf.close()
+        self._shm.close()
 
     def __contains__(self, value):
         return self.array.__contains__(value)

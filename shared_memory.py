@@ -26,7 +26,7 @@ class WindowsNamedSharedMemory:
         self.size = size
 
     def __repr__(self):
-        return f'{self.__class__.__name__}({self.name}, size={self.size})'
+        return f'{self.__class__.__name__}({self.name!r}, size={self.size})'
 
     def close(self):
         self.buf.close()
@@ -48,6 +48,9 @@ class PosixSharedMemory(_PosixSharedMemory):
             _PosixSharedMemory.__init__(self, name, flags=O_CREX, size=size)
 
         self.buf = mmap.mmap(self.fd, self.size)
+
+    def __repr__(self):
+        return f'{self.__class__.__name__}({self.name!r}, size={self.size})'
 
     def close(self):
         self.buf.close()

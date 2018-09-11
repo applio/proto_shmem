@@ -393,6 +393,13 @@ def main04_single(scale=1000, iterations=400000):
     finally:
         shm.unlink()
 
+
+class C:
+    def __init__(self, a, b):
+        self.a = a
+        self.b = b
+
+
 def main05():
     import sys
     lookup_table = {}

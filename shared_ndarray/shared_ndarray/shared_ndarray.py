@@ -42,7 +42,7 @@ class SharedNDArray:
         size = MINIMUMSHMSIZE + int(np.prod(shape)) * np.dtype(dtype).itemsize
         if name:
             try:
-                self._shm = shared_memory.SharedMemory(name)
+                self._shm = shared_memory.SharedMemory(name, size=size)
             except shared_memory.ExistentialError as ee:
                 raise ee.__class__(f"{ee.args[0]}; requested name: {name}")
         else:

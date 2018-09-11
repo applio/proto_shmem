@@ -15,22 +15,19 @@ class SharedMemoryTracker:
         self.segment_names = segment_names
 
     def register_segment(self, segment):
-        print(f"Registering segment {segment.name} in pid {os.getpid()}")
+        print(f"Registering segment {segment.name!r} in pid {os.getpid()}")
         self.segment_names.append(segment.name)
 
     def destroy_segment(self, segment_name):
-        print(f"Destroying segment {segment_name} in pid {os.getpid()}")
+        print(f"Destroying segment {segment_name!r} in pid {os.getpid()}")
         self.segment_names.remove(segment_name)
-        segment = shared_memory.SharedMemory(segment_name)
-        segment.close_fd()
+        segment = shared_memory.SharedMemory(segment_name, size=1)
+        segment.close()
         segment.unlink()
 
     def unlink(self):
         for segment_name in self.segment_names:
-            print(f"Unlinking segment {segment_name} in pid {os.getpid()}")
-            segment = shared_memory.SharedMemory(segment_name)
-            segment.close_fd()
-            segment.unlink()
+            self.destroy_segment(segment_name)
         self.segment_names[:] = []
 
     def __del__(self):

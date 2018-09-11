@@ -8,6 +8,11 @@ except ImportError as ie:
     if os.name != "nt":
         # On Windows, posix_ipc is not required to be available.
         raise ie
+    else:
+        _PosixSharedMemory = object
+        class ExistentialError(BaseException): pass
+        class Error(BaseException): pass
+        O_CREX = -1
 
 
 class WindowsNamedSharedMemory:

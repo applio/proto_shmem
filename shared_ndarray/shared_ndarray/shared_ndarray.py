@@ -46,7 +46,7 @@ class SharedNDArray:
             except shared_memory.ExistentialError as ee:
                 raise ee.__class__(f"{ee.args[0]}; requested name: {name}")
         else:
-            self._shm = shared_memory.SharedMemory(None, shared_memory.O_CREX, size=size)
+            self._shm = shared_memory.SharedMemory(None, flags=shared_memory.O_CREX, size=size)
         self.array = np.ndarray(shape, dtype, self._shm.buf, order='C')
 
     def flush(self):

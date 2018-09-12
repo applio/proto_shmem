@@ -308,21 +308,21 @@ def block_multiply(block_arr_tuple, block_size=1000):
 
 def block_multiply_2(data_tuple, block_size=1000):
     block, result_arr, arr = data_tuple
-    result_arr[:] = arr[block_size*block:block_size*(block+1)] * 4
-    print(result_arr[:2], block, block_size*block, block_size*(block+1), os.getpid(), id(result_arr))
-    print(arr[:2], block, block_size*block, block_size*(block+1), os.getpid(), id(arr))
+    result_arr.array[:] = arr.array[block_size*block:block_size*(block+1)] * 4
+    print(result_arr.array[:2], block, block_size*block, block_size*(block+1), os.getpid(), id(result_arr.array))
+    print(arr.array[:2], block, block_size*block, block_size*(block+1), os.getpid(), id(arr.array))
 
 
 def block_multiply_3(data_tuple):
-    block, block_size, arr, shm = data_tuple
-    result_arr = arr[block_size*block:block_size*(block+1)] * 4000
-    return shm.ndarray(result_arr)
+    block, block_size, arr, result_arr = data_tuple
+    result_arr.array[:] = arr.array[block_size*block:block_size*(block+1)] * 4000
+    return result_arr
 
 
 def block_exponential_4(data_tuple):
     block, block_size, shm_result_arr, shm_arr = data_tuple
-    shm_result_arr.array[:] = shm_arr.array[block_size*block:block_size*(block+1)] ** 0.5
-    shm_result_arr.flush()
+    shm_result_arr.array[:] = shm_arr.array[block_size*block:block_size*(block+1)] ** 0.001
+    #shm_result_arr.flush()
     #print(shm_result_arr.array[:2], block, block_size*block, block_size*(block+1), os.getpid(), id(shm_result_arr))
     #print(shm_arr.array[:2], block, block_size*block, block_size*(block+1), os.getpid(), id(shm_arr))
 
@@ -339,39 +339,43 @@ def main01():
         #with mp.Pool(processes=4) as p:
         #    _results = p.map(block_multiply, enumerate([shared_r.array] * 4))
         with mp.Pool(processes=4) as p:
-            _results = p.map(block_multiply_2, ((i, shared_results[i].array, shared_r.array) for i in range(4)))
+            _results = p.map(block_multiply_2, ((i, shared_results[i], shared_r) for i in range(4)))
         print(shared_results[0].array[:10], "first 10 of", len(shared_results[0].array))
-        print(np.all(np.isclose(shared_results[0].array, local_r[:1000] * 4)))
-        print(np.any(shared_results[0].array == 4))
+        print(np.all(np.isclose(shared_results[0].array, local_r[:1000] * 4)))  # Should be True
+        print(np.any(shared_results[0].array == 4))                             # Should be True
         print(id(local_r), id(shared_r.array), [id(x.array) for x in shared_results])
     finally:
         shm.unlink()
 
 def main02():
-    shm = SharedMemoryTracker("unique_id_002")
+    smt = SharedMemoryTracker("unique_id_002")
     try:
         local_r = np.ones((4000,))
-        shared_r = shm.ndarray(local_r)
+        shared_r = smt.ndarray(local_r)
         with mp.Pool(processes=1) as p:
-            results = p.map(block_multiply_3, ((i, 4000, shared_r.array, shm) for i in range(4)))
+            results = p.map(block_multiply_3, ((i, 1000, shared_r, smt.ndarray((1000,), local_r.dtype)) for i in range(4)))
         #with mp.Pool(processes=4) as p:
-        #    results = p.map(block_multiply_3, ((i, 1000, shared_r.array, shm) for i in range(4)))
+        #    results = p.map(block_multiply_3, ((i, 1000, shared_r.array, smt) for i in range(4)))
         combined_results = np.concatenate([shared_array.array for shared_array in results])
         print(combined_results[:10], "first 10 of", len(combined_results))
-        print(np.all(np.isclose(combined_results, local_r * 4)))
+        print(np.all(np.isclose(combined_results, local_r * 4000)))  # Should be True
     finally:
-        shm.unlink()
+        smt.unlink()
 
-def main04_shmem_parallel(scale=1000, iterations=400000):
-    shm = SharedMemoryTracker("unique_id_001")
+def main04_parallel(scale=1000, iterations=400000, nprocs=2, blocks=8):
+    shm = SharedMemoryTracker("unique_id_004")
     try:
-        local_r = np.random.random_sample((4 * scale,))
+        local_r = np.random.random_sample((blocks * scale,))
         shared_r = shm.ndarray(local_r)
-        shared_results = [ shm.ndarray(scale, local_r.dtype) for i in range(4) ]
-        with mp.Pool(processes=2) as p:
-            _results = p.map(block_exponential_4, ((i % 4, scale, shared_results[i % 4], shared_r) for i in range(iterations)))
+        shared_results = [ shm.ndarray(scale, local_r.dtype) for i in range(blocks) ]
+        if nprocs > 0:
+            with mp.Pool(processes=nprocs) as p:
+                _results = p.map(block_exponential_4, ((i % blocks, scale, shared_results[i % blocks], shared_r) for i in range(iterations)))
+        else:
+            _results = list(map(block_exponential_4, ((i % blocks, scale, shared_results[i % blocks], shared_r) for i in range(iterations))))
         print(shared_results[0].array[:10], "first 10 of", len(shared_results[0].array))
-        print(np.all(np.isclose(shared_results[0].array, np.ones((scale,)))))
+        print(np.all(np.isclose(shared_results[0].array, np.ones((scale,)))))  # Likely False
+        print(np.all(shared_results[0].array > 0.99))  # Should be True
         print(id(local_r), id(shared_r.array), [id(x.array) for x in shared_results])
     finally:
         shm.unlink()
@@ -379,12 +383,14 @@ def main04_shmem_parallel(scale=1000, iterations=400000):
 def main04_single(scale=1000, iterations=400000):
     shm = SharedMemoryTracker("unique_id_001")
     try:
+        np.random.seed(12345)
         local_r = np.random.random_sample((4 * scale,))
         shared_r = shm.ndarray(local_r)
         shared_results = [ shm.ndarray(scale, local_r.dtype) for i in range(4) ]
         _results = list(map(block_exponential_4, ((i % 4, scale, shared_results[i % 4], shared_r) for i in range(iterations))))
         print(shared_results[0].array[:10], "first 10 of", len(shared_results[0].array))
-        print(np.all(np.isclose(shared_results[0].array, np.ones((scale,)))))
+        print(np.all(np.isclose(shared_results[0].array, np.ones((scale,)))))  # Likely False
+        print(np.all(shared_results[0].array > 0.99))  # Should be True
         print(id(local_r), id(shared_r.array), [id(x.array) for x in shared_results])
     finally:
         shm.unlink()

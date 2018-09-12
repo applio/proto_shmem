@@ -21,7 +21,8 @@ class WindowsNamedSharedMemory:
         if name is None:
             name = f'wnsm_{os.getpid()}_{random.randrange(100000)}'
 
-        self.buf = mmap.mmap(-1, size, tagname=name)
+        self._mmap = mmap.mmap(-1, size, tagname=name)
+        self.buf = memoryview(self._mmap)
         self.name = name
         self.size = size
 
@@ -29,7 +30,8 @@ class WindowsNamedSharedMemory:
         return f'{self.__class__.__name__}({self.name!r}, size={self.size})'
 
     def close(self):
-        self.buf.close()
+        self.buf.release()
+        self._mmap.close()
 
     def unlink(self):
         """Windows ensures that destruction of the last reference to this
@@ -47,13 +49,15 @@ class PosixSharedMemory(_PosixSharedMemory):
                 name = f'psm_{os.getpid()}_{random.randrange(100000)}'
             _PosixSharedMemory.__init__(self, name, flags=O_CREX, size=size)
 
-        self.buf = mmap.mmap(self.fd, self.size)
+        self._mmap = mmap.mmap(self.fd, self.size)
+        self.buf = memoryview(self._mmap)
 
     def __repr__(self):
         return f'{self.__class__.__name__}({self.name!r}, size={self.size})'
 
     def close(self):
-        self.buf.close()
+        self.buf.release()
+        self._mmap.close()
         self.close_fd()
 
 

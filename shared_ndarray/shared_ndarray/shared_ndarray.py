@@ -52,8 +52,10 @@ class SharedNDArray:
     def flush(self):
         # Why is this necessary, if at all?!?
         # TODO: Should this use np.memmap() instead?  What would impact to performance be?
-        self._shm.buf.seek(0)
-        self._shm.buf.write(self.array.tobytes())
+        #self._shm.buf.seek(0)
+        #self._shm.buf.write(self.array.tobytes())
+        import warnings
+        warnings.warn("flush() called but should be going away")
 
     def __getattr__(self, name):
         return getattr(self.array, name)
@@ -74,7 +76,7 @@ class SharedNDArray:
         """
         new_shm = cls.zeros_like(arr)
         new_shm.array[:] = arr
-        new_shm.flush()
+        #new_shm.flush()
         return new_shm
 
     @classmethod

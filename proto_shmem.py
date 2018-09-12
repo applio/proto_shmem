@@ -380,21 +380,6 @@ def main04_parallel(scale=1000, iterations=400000, nprocs=2, blocks=8):
     finally:
         shm.unlink()
 
-def main04_single(scale=1000, iterations=400000):
-    shm = SharedMemoryTracker("unique_id_001")
-    try:
-        np.random.seed(12345)
-        local_r = np.random.random_sample((4 * scale,))
-        shared_r = shm.ndarray(local_r)
-        shared_results = [ shm.ndarray(scale, local_r.dtype) for i in range(4) ]
-        _results = list(map(block_exponential_4, ((i % 4, scale, shared_results[i % 4], shared_r) for i in range(iterations))))
-        print(shared_results[0].array[:10], "first 10 of", len(shared_results[0].array))
-        print(np.all(np.isclose(shared_results[0].array, np.ones((scale,)))))  # Likely False
-        print(np.all(shared_results[0].array > 0.99))  # Should be True
-        print(id(local_r), id(shared_r.array), [id(x.array) for x in shared_results])
-    finally:
-        shm.unlink()
-
 
 class C:
     def __init__(self, a, b):
@@ -431,8 +416,7 @@ def main05():
 
 
 if __name__ == '__main__':
-    #main04_shmem_parallel(scale=10000)
-    #main04_single(scale=10000)
+    #main04_parallel(scale=10000, nprocs=2)
 
     m, lookup_table, w = main05()
 

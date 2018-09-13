@@ -75,7 +75,7 @@ class SharedMemory:
 class ShareableList:
     """Pattern for a mutable list-like object shareable via a shared
     memory block.  It differs from the built-in list type in that these
-    objects can not change their overall length (i.e. no append, insert,
+    lists can not change their overall length (i.e. no append, insert,
     etc.)"""
 
     # TODO: Adjust for discovered word size of machine.
@@ -164,6 +164,7 @@ class ShareableList:
 
     @property
     def format(self):
+        "The struct packing format used by all currently stored values."
         return "".join(self._formats)
 
     @classmethod

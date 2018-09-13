@@ -4,10 +4,10 @@ import random
 import struct
 import sys
 try:
-    from posix_ipc import SharedMemory as _PosixSharedMemory, Error, ExistentialError, O_CREX
+    from posixshmem import PosixSharedMemory as _PosixSharedMemory, Error, ExistentialError, O_CREX
 except ImportError as ie:
     if os.name != "nt":
-        # On Windows, posix_ipc is not required to be available.
+        # On Windows, posixshmem is not required to be available.
         raise ie
     else:
         _PosixSharedMemory = object
@@ -178,7 +178,7 @@ class ShareableList:
                 1 * 8
             )
 
-    def get_packing_format(self, position):
+    def _get_packing_format(self, position):
         "Gets the packing format for a single value stored in the list."
         position = position if position >= 0 else position + self._list_len
         if (position >= self._list_len) or (self._list_len < 0):
@@ -244,7 +244,7 @@ class ShareableList:
         except IndexError:
             raise IndexError("index out of range")
 
-        back_transform = self.get_back_transform(position)
+        back_transform = self._get_back_transform(position)
         v = back_transform(v)
 
         return v

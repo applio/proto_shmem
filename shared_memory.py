@@ -142,11 +142,15 @@ class ShareableList:
                 raise ValueError("exceeds available storage for existing str")
             new_format = current_format
             new_back_transform = (type(value), len(value))
+            if isinstance(value, str):
+                value = value.encode(self.encoding)
         else:
             if len(value) > self.alignment:
                 raise ValueError("str exceeds available storage")
             new_format = current_format
             new_back_transform = (type(value), len(value))
+            if isinstance(value, str):
+                value = value.encode(self.encoding)
         struct.pack_into(new_format, self.shm.buf, offset, value)
         self._formats[position] = new_format
         self._back_transforms[position] = new_back_transform

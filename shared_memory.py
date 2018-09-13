@@ -103,6 +103,9 @@ class ShareableList:
 
     @staticmethod
     def _extract_recreation_code(value):
+        """Used in concert with back_transform_codes to convert values
+        into the appropriate Python objects when retrieving them from
+        the list as well as when storing them."""
         if not isinstance(value, (str, bytes, None.__class__)):
             return 0
         elif isinstance(value, str):
@@ -176,6 +179,7 @@ class ShareableList:
             )
 
     def get_packing_format(self, position):
+        "Gets the packing format for a single value stored in the list."
         position = position if position >= 0 else position + self._list_len
         if (position >= self._list_len) or (self._list_len < 0):
             raise IndexError("Requested position out of range.")
@@ -190,7 +194,9 @@ class ShareableList:
 
         return fmt_as_str
 
-    def get_back_transform(self, position):
+    def _get_back_transform(self, position):
+        "Gets the back transformation function for a single value."
+
         position = position if position >= 0 else position + self._list_len
         if (position >= self._list_len) or (self._list_len < 0):
             raise IndexError("Requested position out of range.")
@@ -204,7 +210,10 @@ class ShareableList:
 
         return transform_function
 
-    def set_packing_format_and_transform(self, position, fmt_as_str, value):
+    def _set_packing_format_and_transform(self, position, fmt_as_str, value):
+        """Sets the packing format and back transformation code for a
+        single value in the list at the specified position."""
+
         position = position if position >= 0 else position + self._list_len
         if (position >= self._list_len) or (self._list_len < 0):
             raise IndexError("Requested position out of range.")
@@ -228,7 +237,7 @@ class ShareableList:
         try:
             offset = self._offset_data_start + sum(self._allocated_bytes[:position])
             (v,) = struct.unpack_from(
-                self.get_packing_format(position),
+                self._get_packing_format(position),
                 self.shm.buf,
                 offset
             )
@@ -243,7 +252,7 @@ class ShareableList:
     def __setitem__(self, position, value):
         try:
             offset = self._offset_data_start + sum(self._allocated_bytes[:position])
-            current_format = self.get_packing_format(position)
+            current_format = self._get_packing_format(position)
         except IndexError:
             raise IndexError("assignment index out of range")
 
@@ -258,7 +267,7 @@ class ShareableList:
                 raise ValueError("str exceeds available storage")
             new_format = current_format
 
-        self.set_packing_format_and_transform(
+        self._set_packing_format_and_transform(
             position,
             new_format,
             value
@@ -272,7 +281,7 @@ class ShareableList:
     @property
     def format(self):
         "The struct packing format used by all currently stored values."
-        return "".join(self.get_packing_format(i) for i in range(self._list_len))
+        return "".join(self._get_packing_format(i) for i in range(self._list_len))
 
     @property
     def _format_size_metainfo(self):
@@ -281,10 +290,12 @@ class ShareableList:
 
     @property
     def _format_packing_metainfo(self):
+        "The struct packing format used for the values' packing formats."
         return "8s" * self._list_len
 
     @property
     def _format_back_transform_codes(self):
+        "The struct packing format used for the values' back transforms."
         return "b" * self._list_len
 
     @property

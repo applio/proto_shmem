@@ -90,6 +90,14 @@ class ShareableList:
     alignment = 8
     encoding = "utf8"
 
+    @staticmethod
+    def _extract_recreation_function(value):
+        if isinstance(value, None.__class__):
+            recreation_function = lambda x: None
+        else:
+            recreation_function = type(value)
+        return recreation_function
+
     def __init__(self, iterable):
         self._formats = [
             self.types_mapping[type(item)] if not isinstance(item, (str, bytes))
@@ -103,8 +111,9 @@ class ShareableList:
                 for fmt in self._formats
         )
         self._back_transforms = [
-            (type(item), len(item)) if isinstance(item, (str, bytes))
-                else None
+            (self._extract_recreation_function(item), len(item))
+                if isinstance(item, (str, bytes))
+                else (self._extract_recreation_function(item), None)
             for item in iterable
         ]
         self._len = len(self._formats)
@@ -125,12 +134,14 @@ class ShareableList:
 
         (v,) = struct.unpack_from(self._formats[position], self.shm.buf, offset)
 
-        if isinstance(v, bytes):
+        if isinstance(v, (bytes, bool)):
             transform_type, transform_len = self._back_transforms[position]
             if transform_type == str:
                 v = transform_type(v[:transform_len], encoding=self.encoding)
-            else:
+            elif transform_len is not None:
                 v = transform_type(v[:transform_len])
+            else:
+                v = transform_type(v)
         return v
 
     def __setitem__(self, position, value):
@@ -142,19 +153,19 @@ class ShareableList:
 
         if not isinstance(value, (str, bytes)):
             new_format = self.types_mapping[type(item)]
-            new_back_transform = None
+            new_back_transform = (self._extract_recreation_function(value), None)
         elif current_format[-1] == "s":
             if int(current_format[:-1]) < len(value):
                 raise ValueError("exceeds available storage for existing str")
             new_format = current_format
-            new_back_transform = (type(value), len(value))
+            new_back_transform = (self._extract_recreation_function(value), len(value))
             if isinstance(value, str):
                 value = value.encode(self.encoding)
         else:
             if len(value) > self.alignment:
                 raise ValueError("str exceeds available storage")
             new_format = current_format
-            new_back_transform = (type(value), len(value))
+            new_back_transform = (self._extract_recreation_function(value), len(value))
             if isinstance(value, str):
                 value = value.encode(self.encoding)
 

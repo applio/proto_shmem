@@ -73,7 +73,10 @@ class SharedMemory:
 
 
 class ShareableList:
-    "Pattern for a list-like object shareable via a shared memory block."
+    """Pattern for a mutable list-like object shareable via a shared
+    memory block.  It differs from the built-in list type in that these
+    objects can not change their overall length (i.e. no append, insert,
+    etc.)"""
 
     # TODO: Adjust for discovered word size of machine.
     types_mapping = {
@@ -162,4 +165,24 @@ class ShareableList:
     @property
     def format(self):
         return "".join(self._formats)
-    
+
+    @classmethod
+    def copy(cls, self):
+        "L.copy() -> ShareableList -- a shallow copy of L."
+
+        return cls(self)
+
+    def count(self, value):
+        "L.count(value) -> integer -- return number of occurrences of value."
+
+        return sum(value == entry for entry in self)
+
+    def index(self, value):
+        """L.index(value) -> integer -- return first index of value.
+        Raises ValueError if the value is not present."""
+
+        for position, entry in enumerate(self):
+            if value == entry:
+                return position
+        else:
+            raise ValueError(f"{value!r} not in this container")

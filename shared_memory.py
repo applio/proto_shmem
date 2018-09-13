@@ -73,6 +73,8 @@ class SharedMemory:
 
 
 class ShareableList:
+    "Pattern for a list-like object shareable via a shared memory block."
+
     # TODO: Adjust for discovered word size of machine.
     types_mapping = {
         int: "q",
@@ -93,6 +95,10 @@ class ShareableList:
                 )
             for item in iterable
         ]
+        self._allocated_bytes = tuple(
+                self.alignment if fmt[-1] != "s" else int(fmt[:-1])
+                for fmt in self._formats
+        )
         self._back_transforms = [
             (type(item), len(item)) if isinstance(item, (str, bytes))
                 else None
@@ -110,13 +116,12 @@ class ShareableList:
 
     def __getitem__(self, position):
         try:
-            offset = sum(
-                self.alignment if fmt[-1] != "s" else int(fmt[:-1])
-                for fmt in self._formats[:position]
-            )
+            offset = sum(self._allocated_bytes[:position])
         except IndexError:
             raise IndexError("index out of range")
+
         (v,) = struct.unpack_from(self._formats[position], self.shm.buf, offset)
+
         if isinstance(v, bytes):
             transform_type, transform_len = self._back_transforms[position]
             if transform_type == str:
@@ -127,13 +132,11 @@ class ShareableList:
 
     def __setitem__(self, position, value):
         try:
-            offset = sum(
-                self.alignment if fmt[-1] != "s" else int(fmt[:-1])
-                for fmt in self._formats[:position]
-            )
+            offset = sum(self._allocated_bytes[:position])
+            current_format = self._formats[position]
         except IndexError:
             raise IndexError("assignment index out of range")
-        current_format = self._formats[position]
+
         if not isinstance(value, (str, bytes)):
             new_format = self.types_mapping[type(item)]
             new_back_transform = None
@@ -151,6 +154,7 @@ class ShareableList:
             new_back_transform = (type(value), len(value))
             if isinstance(value, str):
                 value = value.encode(self.encoding)
+
         struct.pack_into(new_format, self.shm.buf, offset, value)
         self._formats[position] = new_format
         self._back_transforms[position] = new_back_transform

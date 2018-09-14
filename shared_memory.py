@@ -257,7 +257,7 @@ class ShareableList:
             raise IndexError("assignment index out of range")
 
         if not isinstance(value, (str, bytes)):
-            new_format = self.types_mapping[type(item)]
+            new_format = self.types_mapping[type(value)]
         elif current_format[-1] == "s":
             if int(current_format[:-1]) < len(value):
                 raise ValueError("exceeds available storage for existing str")

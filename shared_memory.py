@@ -258,14 +258,15 @@ class ShareableList:
 
         if not isinstance(value, (str, bytes)):
             new_format = self.types_mapping[type(value)]
-        elif current_format[-1] == "s":
-            if int(current_format[:-1]) < len(value):
-                raise ValueError("exceeds available storage for existing str")
-            new_format = current_format
         else:
-            if len(value) > self.alignment:
-                raise ValueError("str exceeds available storage")
-            new_format = current_format
+            if len(value) > self._allocated_bytes[position]:
+                raise ValueError("exceeds available storage for existing str")
+            if current_format[-1] == "s":
+                new_format = current_format
+            else:
+                new_format = self.types_mapping[str] % (
+                    self._allocated_bytes[position],
+                )
 
         self._set_packing_format_and_transform(
             position,

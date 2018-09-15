@@ -1,3 +1,4 @@
+from functools import reduce
 import mmap
 import os
 import random
@@ -64,12 +65,114 @@ class PosixSharedMemory(_PosixSharedMemory):
 
 class SharedMemory:
 
-    def __new__(self, *args, **kwargs):
+    def __new__(cls, *args, **kwargs):
         if os.name == 'nt':
             cls = WindowsNamedSharedMemory
         else:
             cls = PosixSharedMemory
         return cls(*args, **kwargs)
+
+
+def shareable_wrap(existing_type, additional_excluded_methods=[]):
+    excluded_methods = {
+        "__new__", "__class__", "__copy__", "__deepcopy__", "__getattribute__",
+        "__hash__", "__init__", "__init_subclass__", "__reduce__",
+        "__reduce_ex__", "__getattr__", "__setattr__", "__getstate__",
+        "__setstate__", "__sizeof__", "__subclasshook__", "__subclasscheck__",
+        "__instancecheck__", "__abstractmethods__", "__base__", "__bases__",
+        "__basicsize__", "__dict__", "__dictoffset__", "__flags__",
+        "__itemsize__", "__mro__", "__name__", "__qualname__",
+        "__text_signature__", "__weakrefoffset__", "__repr__", "__str__",
+    }
+    excluded_methods.update(additional_excluded_methods)
+    kept_dunders = dict(
+        (
+            attr,
+            lambda self, *args, _attr=attr, **kwargs: getattr(existing_type, _attr)(self._wrapped_obj, *args, **kwargs)
+        )
+        for attr in dir(existing_type)
+            if attr.startswith("__") and (attr not in excluded_methods)
+    )
+
+    class CustomShareableWrap(ShareableWrappedObject, **kept_dunders):
+        pass
+
+    CustomShareableWrap.__name__ = f"share_wrap({existing_type.__name__})"
+
+    return CustomShareableWrap
+
+
+class ShareableWrappedObject:
+
+    def __init__(self, existing_obj=None, shmem_name=None, **kwargs):
+        if existing_obj is not None:
+            # TODO: replace use of reduce below with next 2 lines once available
+            #agg = 1
+            #size = [ agg := i * agg for i in existing_obj.shape ][-1]
+            size = reduce(
+                lambda x, y: x * y,
+                existing_obj.shape,
+                existing_obj.itemsize
+            )
+        else:
+            assert shmem_name is not None
+            size = 1
+        self._shm = SharedMemory(shmem_name, size=size)
+
+        existing_kwargs = self._build_kwargs(existing_obj)
+        kwargs.update(existing_kwargs)
+
+        obj_type = type(existing_obj) if "__class__" not in kwargs else kwargs["__class__"]
+
+        self._wrapped_obj = obj_type(buffer=self._shm.buf, **kwargs)
+
+        if existing_obj is not None:
+            mveo = memoryview(existing_obj)
+            self._shm.buf[:mveo.nbytes] = mveo.tobytes()
+
+    @staticmethod
+    def _build_kwargs(existing_obj):
+        kwargs = {
+            "shape": existing_obj.shape,
+            "strides": existing_obj.strides,
+        }
+        try:
+            kwargs["dtype"] = existing_obj.dtype
+        except AttributeError:
+            pass
+        return kwargs
+
+    def __init_subclass__(cls, **kwargs):
+        for attr, value in kwargs.items():
+            try:
+                setattr(cls, attr, value)
+            except Exception as e:
+                print(attr, value, repr(e))
+                raise e
+
+    def __repr__(self):
+        formatted_pairs = ("%s=%r" % kv for kv in self.__getstate__().items())
+        return f"{self.__class__.__name__}({', '.join(formatted_pairs)})"
+
+    def __getstate__(self):
+        kwargs = self._build_kwargs(self._wrapped_obj)
+        kwargs["shmem_name"] = self._shm.name
+        kwargs["__class__"] = type(self._wrapped_obj)
+        return kwargs
+
+    def __setstate__(self, state):
+        self.__init__(**state)
+
+
+#class ShareableWrappedObject(_ShareableWrappedObject):
+#
+#    def __new__(cls, existing_obj=None, shmem_name=None, **kwargs):
+#        wrapped_type = existing_obj.__class__ #type(existing_obj)
+#        dunders = (attr for attr in dir(wrapped_type) if attr.startswith("__"))
+#        for attr in dunders:
+#            #setattr(cls, attr, getattr(wrapped_type, attr))
+#            cls[attr] = wrapped_type[attr]
+#        return type.__new__(cls.__name__, cls.__bases__, cls.__dict__)
 
 
 encoding = "utf8"

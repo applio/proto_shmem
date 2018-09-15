@@ -73,45 +73,6 @@ class SharedMemory:
         return cls(*args, **kwargs)
 
 
-def alt_shareable_wrap(existing_type_or_obj, additional_excluded_methods=[]):
-    if isinstance(existing_type_or_obj, type):
-        existing_type = existing_type_or_obj
-        existing_obj = None
-    else:
-        existing_type = type(existing_type_or_obj)
-        existing_obj = existing_type_or_obj
-
-    excluded_methods = {
-        "__new__", "__class__", "__copy__", "__deepcopy__", "__getattribute__",
-        "__hash__", "__init__", "__init_subclass__", "__reduce__",
-        "__reduce_ex__", "__getattr__", "__setattr__", "__getstate__",
-        "__setstate__", "__sizeof__", "__subclasshook__", "__subclasscheck__",
-        "__instancecheck__", "__abstractmethods__", "__base__", "__bases__",
-        "__basicsize__", "__dict__", "__dictoffset__", "__flags__",
-        "__itemsize__", "__mro__", "__name__", "__qualname__",
-        "__text_signature__", "__weakrefoffset__", "__repr__", "__str__",
-        "__dir__",
-    }
-    excluded_methods.update(additional_excluded_methods)
-    kept_dunders = {
-        attr: (
-            lambda self, *args, _attr=attr, **kwargs:
-                getattr(existing_type, _attr)(self._wrapped_obj, *args, **kwargs)
-        )
-        for attr in dir(existing_type) if attr not in excluded_methods
-    }
-
-    class CustomShareableWrap(ShareableWrappedObject, **kept_dunders):
-        pass
-
-    CustomShareableWrap.__name__ = f"shareable_wrap({existing_type.__name__})"
-
-    if existing_obj is None:
-        return CustomShareableWrap
-    else:
-        return CustomShareableWrap(existing_type_or_obj)
-
-
 def shareable_wrap(
     existing_obj=None,
     shmem_name=None,
@@ -175,18 +136,64 @@ def shareable_wrap(
                 pass
             return state
 
+    proxy_type = type(
+        f"{existing_type.__name__}Shareable",
+        CustomShareableProxy.__bases__,
+        dict(CustomShareableProxy.__dict__),
+    )
+
     if existing_obj is not None:
-        proxy_obj = CustomShareableProxy(
-            buffer=shm.buf, **CustomShareableProxy._build_state(existing_obj)
+        proxy_obj = proxy_type(
+            buffer=shm.buf,
+            **proxy_type._build_state(existing_obj)
         )
 
         mveo = memoryview(existing_obj)
         proxy_obj._shm.buf[:mveo.nbytes] = mveo.tobytes()
 
     else:
-        proxy_obj = CustomShareableProxy(buffer=shm.buf, **kwargs)
+        proxy_obj = proxy_type(buffer=shm.buf, **kwargs)
 
     return proxy_obj
+
+
+def alt_shareable_wrap(existing_type_or_obj, additional_excluded_methods=[]):
+    if isinstance(existing_type_or_obj, type):
+        existing_type = existing_type_or_obj
+        existing_obj = None
+    else:
+        existing_type = type(existing_type_or_obj)
+        existing_obj = existing_type_or_obj
+
+    excluded_methods = {
+        "__new__", "__class__", "__copy__", "__deepcopy__", "__getattribute__",
+        "__hash__", "__init__", "__init_subclass__", "__reduce__",
+        "__reduce_ex__", "__getattr__", "__setattr__", "__getstate__",
+        "__setstate__", "__sizeof__", "__subclasshook__", "__subclasscheck__",
+        "__instancecheck__", "__abstractmethods__", "__base__", "__bases__",
+        "__basicsize__", "__dict__", "__dictoffset__", "__flags__",
+        "__itemsize__", "__mro__", "__name__", "__qualname__",
+        "__text_signature__", "__weakrefoffset__", "__repr__", "__str__",
+        "__dir__",
+    }
+    excluded_methods.update(additional_excluded_methods)
+    kept_dunders = {
+        attr: (
+            lambda self, *args, _attr=attr, **kwargs:
+                getattr(existing_type, _attr)(self._wrapped_obj, *args, **kwargs)
+        )
+        for attr in dir(existing_type) if attr not in excluded_methods
+    }
+
+    class CustomShareableWrap(ShareableWrappedObject, **kept_dunders):
+        pass
+
+    CustomShareableWrap.__name__ = f"shareable_wrap({existing_type.__name__})"
+
+    if existing_obj is None:
+        return CustomShareableWrap
+    else:
+        return CustomShareableWrap(existing_type_or_obj)
 
 
 class ShareableWrappedObject:

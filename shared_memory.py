@@ -122,7 +122,7 @@ def shareable_wrap(
         existing_type = type(existing_obj)
 
         # TODO: replace use of reduce below with next 2 lines once available
-        #agg = 1
+        #agg = existing_obj.itemsize
         #size = [ agg := i * agg for i in existing_obj.shape ][-1]
         size = reduce(
             lambda x, y: x * y,
@@ -194,7 +194,7 @@ class ShareableWrappedObject:
     def __init__(self, existing_obj=None, shmem_name=None, **kwargs):
         if existing_obj is not None:
             # TODO: replace use of reduce below with next 2 lines once available
-            #agg = 1
+            #agg = existing_obj.itemsize
             #size = [ agg := i * agg for i in existing_obj.shape ][-1]
             size = reduce(
                 lambda x, y: x * y,

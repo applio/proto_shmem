@@ -73,7 +73,14 @@ class SharedMemory:
         return cls(*args, **kwargs)
 
 
-def shareable_wrap(existing_type, additional_excluded_methods=[]):
+def shareable_wrap(existing_type_or_obj, additional_excluded_methods=[]):
+    if isinstance(existing_type_or_obj, type):
+        existing_type = existing_type_or_obj
+        existing_obj = None
+    else:
+        existing_type = type(existing_type_or_obj)
+        existing_obj = existing_type_or_obj
+
     excluded_methods = {
         "__new__", "__class__", "__copy__", "__deepcopy__", "__getattribute__",
         "__hash__", "__init__", "__init_subclass__", "__reduce__",
@@ -83,23 +90,26 @@ def shareable_wrap(existing_type, additional_excluded_methods=[]):
         "__basicsize__", "__dict__", "__dictoffset__", "__flags__",
         "__itemsize__", "__mro__", "__name__", "__qualname__",
         "__text_signature__", "__weakrefoffset__", "__repr__", "__str__",
+        "__dir__",
     }
     excluded_methods.update(additional_excluded_methods)
-    kept_dunders = dict(
-        (
-            attr,
-            lambda self, *args, _attr=attr, **kwargs: getattr(existing_type, _attr)(self._wrapped_obj, *args, **kwargs)
+    kept_dunders = {
+        attr: (
+            lambda self, *args, _attr=attr, **kwargs:
+                getattr(existing_type, _attr)(self._wrapped_obj, *args, **kwargs)
         )
-        for attr in dir(existing_type)
-            if attr.startswith("__") and (attr not in excluded_methods)
-    )
+        for attr in dir(existing_type) if attr not in excluded_methods
+    }
 
     class CustomShareableWrap(ShareableWrappedObject, **kept_dunders):
         pass
 
-    CustomShareableWrap.__name__ = f"share_wrap({existing_type.__name__})"
+    CustomShareableWrap.__name__ = f"shareable_wrap({existing_type.__name__})"
 
-    return CustomShareableWrap
+    if existing_obj is None:
+        return CustomShareableWrap
+    else:
+        return CustomShareableWrap(existing_type_or_obj)
 
 
 class ShareableWrappedObject:
@@ -147,8 +157,10 @@ class ShareableWrappedObject:
             try:
                 setattr(cls, attr, value)
             except Exception as e:
-                print(attr, value, repr(e))
-                raise e
+                raise AttributeError(f"{attr!r} could not be set as attribute")
+
+    def __getattr__(self, attr):
+        return getattr(self._wrapped_obj, attr)
 
     def __repr__(self):
         formatted_pairs = ("%s=%r" % kv for kv in self.__getstate__().items())

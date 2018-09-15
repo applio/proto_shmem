@@ -73,7 +73,7 @@ class SharedMemory:
         return cls(*args, **kwargs)
 
 
-def shareable_wrap(existing_type_or_obj, additional_excluded_methods=[]):
+def alt_shareable_wrap(existing_type_or_obj, additional_excluded_methods=[]):
     if isinstance(existing_type_or_obj, type):
         existing_type = existing_type_or_obj
         existing_obj = None
@@ -112,6 +112,83 @@ def shareable_wrap(existing_type_or_obj, additional_excluded_methods=[]):
         return CustomShareableWrap(existing_type_or_obj)
 
 
+def shareable_wrap(
+    existing_obj=None,
+    shmem_name=None,
+    cls=None,
+    **kwargs
+):
+    if existing_obj is not None:
+        existing_type = type(existing_obj)
+
+        # TODO: replace use of reduce below with next 2 lines once available
+        #agg = 1
+        #size = [ agg := i * agg for i in existing_obj.shape ][-1]
+        size = reduce(
+            lambda x, y: x * y,
+            existing_obj.shape,
+            existing_obj.itemsize
+        )
+
+    else:
+        assert shmem_name is not None
+        existing_type = cls
+        size = 1
+
+    shm = SharedMemory(shmem_name, size=size)
+
+    class CustomShareableProxy(existing_type):
+
+        def __init__(self, *args, buffer=None, **kwargs):
+            self._shm = shm
+            try:
+                existing_type.__init__(self, *args, **kwargs)
+            except:
+                pass
+
+        def __repr__(self):
+            if not hasattr(self, "_shm"):
+                return existing_type.__repr__(self)
+            formatted_pairs = ("%s=%r" % kv for kv in self.__getstate__().items())
+            return f"{self.__class__.__name__}({', '.join(formatted_pairs)})"
+
+        def __getstate__(self):
+            if not hasattr(self, "_shm"):
+                return existing_type.__getstate__(self)
+            state = self._build_state(self)
+            state["shmem_name"] = self._shm.name
+            state["cls"] = existing_type
+            return state
+
+        def __setstate__(self, state):
+            self.__init__(**state)
+
+        @staticmethod
+        def _build_state(existing_obj):
+            state = {
+                "shape": existing_obj.shape,
+                "strides": existing_obj.strides,
+            }
+            try:
+                state["dtype"] = existing_obj.dtype
+            except AttributeError:
+                pass
+            return state
+
+    if existing_obj is not None:
+        proxy_obj = CustomShareableProxy(
+            buffer=shm.buf, **CustomShareableProxy._build_state(existing_obj)
+        )
+
+        mveo = memoryview(existing_obj)
+        proxy_obj._shm.buf[:mveo.nbytes] = mveo.tobytes()
+
+    else:
+        proxy_obj = CustomShareableProxy(buffer=shm.buf, **kwargs)
+
+    return proxy_obj
+
+
 class ShareableWrappedObject:
 
     def __init__(self, existing_obj=None, shmem_name=None, **kwargs):
@@ -132,7 +209,7 @@ class ShareableWrappedObject:
         existing_kwargs = self._build_kwargs(existing_obj)
         kwargs.update(existing_kwargs)
 
-        obj_type = type(existing_obj) if "__class__" not in kwargs else kwargs["__class__"]
+        obj_type = type(existing_obj) if "cls" not in kwargs else kwargs["cls"]
 
         self._wrapped_obj = obj_type(buffer=self._shm.buf, **kwargs)
 
@@ -169,7 +246,7 @@ class ShareableWrappedObject:
     def __getstate__(self):
         kwargs = self._build_kwargs(self._wrapped_obj)
         kwargs["shmem_name"] = self._shm.name
-        kwargs["__class__"] = type(self._wrapped_obj)
+        kwargs["cls"] = type(self._wrapped_obj)
         return kwargs
 
     def __setstate__(self, state):

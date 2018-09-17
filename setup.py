@@ -1,22 +1,20 @@
-# Python-ish modules
-# setuptools is apparently distributed with python.org Python now. Does that mean it's
-# standard? Who knows. I need it to build wheels on my machine, otherwise I can get by just
-# fine with distutils.
-try:
-    import setuptools as distutools
-except ImportError:
-    import distutils.core as distutools
+#!/usr/bin/env python3
+
+import setuptools
 
 import sys
+if sys.version_info < (3, 6):
+    raise NotImplementedError("Sorry, you need at least Python 3.6+ to use this.")
+
 from mmap import PAGESIZE  # TODO: Can pull this straight from Python.h and thus eliminate probe_results.h?
 
 VERSION = "1.0.0"
 
 name = "posixshmem"
-description = "POSIX IPC primitives (semaphores, shared memory and message queues) for Python"
+description = "POSIX IPC primitives (shared memory) for Python"
 #with open("README") as f:
 #    long_description = f.read().strip()
-author = "Philip Semanchuk"
+author = "Davin Potts / Philip Semanchuk"
 author_email = "python@discontinuity.net"
 maintainer = "Davin Potts"
 url = "https://github.com/applio/posixshmem/"
@@ -31,13 +29,14 @@ classifiers = [
     "Operating System :: POSIX :: SunOS/Solaris",
     "Operating System :: POSIX",
     "Operating System :: Unix",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: Microsoft :: Windows :: Windows 10",
     "Programming Language :: Python",
-    "Programming Language :: Python :: 2",
     "Programming Language :: Python :: 3",
     "Topic :: Utilities"
 ]
 license = "http://creativecommons.org/licenses/BSD/"
-keywords = "ipc inter-process communication semaphore shared memory shm message queue"
+keywords = "ipc inter-process communication shared memory shm"
 
 libraries = []
 
@@ -47,7 +46,7 @@ if sys.platform.startswith("bsd"):
     libraries.append("rt")
 
 ext_modules = [
-    distutools.Extension(
+    setuptools.Extension(
         "posixshmem",
         source_files,
         libraries=libraries,
@@ -76,12 +75,17 @@ To recreate this file, just delete it and re-run setup.py.
 #endif
 """
 
+py_modules = [
+    "shared_memory",
+    "proto_shmem"
+]
+
 
 if __name__ == '__main__':
     with open("probe_results.h", "wt") as pr:
         pr.write(include_file_contents)
 
-    distutools.setup(
+    setuptools.setup(
         name=name,
         version=VERSION,
         description=description,
@@ -93,5 +97,6 @@ if __name__ == '__main__':
         classifiers=classifiers,
         license=license,
         keywords=keywords,
+        py_modules=py_modules,
         ext_modules=ext_modules
     )

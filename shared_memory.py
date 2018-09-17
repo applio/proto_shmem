@@ -5,7 +5,7 @@ import random
 import struct
 import sys
 try:
-    from posixshmem import PosixSharedMemory as _PosixSharedMemory, Error, ExistentialError, O_CREX
+    from posixshmem import _PosixSharedMemory, Error, ExistentialError, O_CREX
 except ImportError as ie:
     if os.name != "nt":
         # On Windows, posixshmem is not required to be available.
@@ -101,7 +101,9 @@ def shareable_wrap(
     class CustomShareableProxy(existing_type):
 
         def __init__(self, *args, buffer=None, **kwargs):
-            self._shm = shm
+            # If copy method called, prevent recursion from replacing _shm.
+            if not hasattr(self, "_shm"):
+                self._shm = shm
             try:
                 existing_type.__init__(self, *args, **kwargs)
             except:
@@ -123,6 +125,12 @@ def shareable_wrap(
 
         def __setstate__(self, state):
             self.__init__(**state)
+
+        def copy(self):
+            dupe = existing_type.copy(self)
+            if not hasattr(dupe, "_shm"):
+                dupe = shareable_wrap(dupe)
+            return dupe
 
         @staticmethod
         def _build_state(existing_obj):

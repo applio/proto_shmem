@@ -589,7 +589,7 @@ static PyGetSetDef SharedMemory_getseters[] = {
 
 static PyTypeObject SharedMemoryType = {
     PyVarObject_HEAD_INIT(NULL, 0)
-    "posixshmem.PosixSharedMemory",     // tp_name
+    "posixshmem._PosixSharedMemory",    // tp_name
     sizeof(SharedMemory),               // tp_basicsize
     0,                                  // tp_itemsize
     (destructor) SharedMemory_dealloc,  // tp_dealloc
@@ -693,7 +693,7 @@ POSIX_IPC_INIT_FUNCTION_NAME(void) {
         goto error_return;
 
     Py_INCREF(&SharedMemoryType);
-    PyModule_AddObject(module, "PosixSharedMemory", (PyObject *)&SharedMemoryType);
+    PyModule_AddObject(module, "_PosixSharedMemory", (PyObject *)&SharedMemoryType);
 
 
     PyModule_AddStringConstant(module, "VERSION", POSIXSHMEM_VERSION);

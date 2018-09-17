@@ -70,11 +70,11 @@ Use Cases
 TODO
 ----
 * expose a SharedDict class (like the now existing SharedList)
-* evaluate continued use of posix_ipc as a whole or only parts relevant to shared memory segments (not using POSIX message queues or POSIX semaphores at present) or inspired new implementation
+* **DONE** evaluate continued use of posix_ipc as a whole or only parts relevant to shared memory segments (not using POSIX message queues or POSIX semaphores at present) or inspired new implementation
 
   * for Windows with its current lack of POSIX shared memory support, provide suitable solution ultimately using Native Shared Memory
 
-* eliminate the explicit dependency on NumPy's ndarrays but keep it dead simple to create ndarrays in shared memory segments
+* **DONE** eliminate the explicit dependency on NumPy's ndarrays but keep it dead simple to create ndarrays in shared memory segments
 * rationalize all this with what's done in ``multiprocessing.sharedctypes``
 
   * directly compare performance of sharedctypes's all-in-one segment approach versus multiple segments approach used here so far

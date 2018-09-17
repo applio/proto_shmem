@@ -15,11 +15,11 @@ class SharedMemoryTracker:
         self.segment_names = segment_names
 
     def register_segment(self, segment):
-        print(f"Registering segment {segment.name!r} in pid {os.getpid()}")
+        print(f"DBG Registering segment {segment.name!r} in pid {os.getpid()}")
         self.segment_names.append(segment.name)
 
     def destroy_segment(self, segment_name):
-        print(f"Destroying segment {segment_name!r} in pid {os.getpid()}")
+        print(f"DBG Destroying segment {segment_name!r} in pid {os.getpid()}")
         self.segment_names.remove(segment_name)
         segment = shared_memory.SharedMemory(segment_name, size=1)
         segment.close()
@@ -31,7 +31,7 @@ class SharedMemoryTracker:
         self.segment_names[:] = []
 
     def __del__(self):
-        print(f"somebody called {self.__class__.__name__}.__del__: {os.getpid()}")
+        print(f"DBG somebody called {self.__class__.__name__}.__del__: {os.getpid()}")
         self.unlink()
 
     def __getstate__(self):
@@ -40,18 +40,10 @@ class SharedMemoryTracker:
     def __setstate__(self, state):
         self.__init__(*state)
 
-    def ndarray(self, arr, dtype=None):
-        "To be removed -- needs to be register-able to intro numpy support."
-        try:
-            shape = arr.shape
-            dtype = arr.dtype
-            shared_array = SharedNDArray.copy(arr)
-        except AttributeError:
-            shape = arr    # assume is a tuple
-            dtype = dtype  # assume contains numpy.dtype
-            shared_array = SharedNDArray(shape, dtype)
-        self.register_segment(shared_array._shm)
-        return shared_array
+    def wrap(self, obj_exposing_buffer_protocol):
+        wrapped_obj = shared_memory.shareable_wrap(obj_exposing_buffer_protocol)
+        self.register_segment(wrapped_obj._shm)
+        return wrapped_obj
 
 
 class AugmentedServer(Server):
@@ -59,7 +51,7 @@ class AugmentedServer(Server):
         Server.__init__(self, *args, **kwargs)
         self.shared_memory_context = \
             SharedMemoryTracker(f"shmm_{self.address}_{os.getpid()}")
-        print(f"AugmentedServer started by pid {os.getpid()}")
+        print(f"DBG AugmentedServer started by pid {os.getpid()}")
 
     def create(self, c, typeid, *args, **kwargs):
         # Unless set up as a shared proxy, don't make shared_memory_context

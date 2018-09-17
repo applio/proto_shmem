@@ -607,9 +607,8 @@ class SharedMemoryTracker:
         segment.unlink()
 
     def unlink(self):
-        for segment_name in self.segment_names:
+        for segment_name in self.segment_names[:]:
             self.destroy_segment(segment_name)
-        self.segment_names[:] = []
 
     def __del__(self):
         print(f"DBG somebody called {self.__class__.__name__}.__del__: {os.getpid()}")

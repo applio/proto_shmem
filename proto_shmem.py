@@ -1,100 +1,9 @@
 import os
-from multiprocessing.managers import BaseProxy, MakeProxyType, AutoProxy, \
-                                     DictProxy, SyncManager, Server
+from multiprocessing.managers import BaseProxy, MakeProxyType, DictProxy
 import multiprocessing as mp
 import numpy as np
 from shared_ndarray.shared_ndarray import SharedNDArray
 import shared_memory
-
-
-class SharedMemoryTracker:
-    "Manages one or more shared memory segments."
-
-    def __init__(self, name, segment_names=[]):
-        self.shared_memory_context_name = name
-        self.segment_names = segment_names
-
-    def register_segment(self, segment):
-        print(f"DBG Registering segment {segment.name!r} in pid {os.getpid()}")
-        self.segment_names.append(segment.name)
-
-    def destroy_segment(self, segment_name):
-        print(f"DBG Destroying segment {segment_name!r} in pid {os.getpid()}")
-        self.segment_names.remove(segment_name)
-        segment = shared_memory.SharedMemory(segment_name, size=1)
-        segment.close()
-        segment.unlink()
-
-    def unlink(self):
-        for segment_name in self.segment_names:
-            self.destroy_segment(segment_name)
-        self.segment_names[:] = []
-
-    def __del__(self):
-        print(f"DBG somebody called {self.__class__.__name__}.__del__: {os.getpid()}")
-        self.unlink()
-
-    def __getstate__(self):
-        return (self.shared_memory_context_name, self.segment_names)
-
-    def __setstate__(self, state):
-        self.__init__(*state)
-
-    def wrap(self, obj_exposing_buffer_protocol):
-        wrapped_obj = shared_memory.shareable_wrap(obj_exposing_buffer_protocol)
-        self.register_segment(wrapped_obj._shm)
-        return wrapped_obj
-
-
-class AugmentedServer(Server):
-    def __init__(self, *args, **kwargs):
-        Server.__init__(self, *args, **kwargs)
-        self.shared_memory_context = \
-            SharedMemoryTracker(f"shmm_{self.address}_{os.getpid()}")
-        print(f"DBG AugmentedServer started by pid {os.getpid()}")
-
-    def create(self, c, typeid, *args, **kwargs):
-        # Unless set up as a shared proxy, don't make shared_memory_context
-        # a standard part of kwargs.  This makes things easier for supplying
-        # simple functions.
-        if hasattr(self.registry[typeid][-1], "_shared_memory_proxy"):
-            kwargs['shared_memory_context'] = self.shared_memory_context
-        return Server.create(self, c, typeid, *args, **kwargs)
-
-    def shutdown(self, c):
-        self.shared_memory_context.unlink()
-        return Server.shutdown(self, c)
-
-
-class SharedMemoryManager(SyncManager):
-    """Like SyncManager but uses AugmentedServer instead of Server.
-
-    TODO: relocate/merge into managers submodule."""
-
-    _Server = AugmentedServer
-
-    def __init__(self, *args, **kwargs):
-        # TODO: Remove after debugging satisfied
-        SyncManager.__init__(self, *args, **kwargs)
-        print(f"{self.__class__.__name__} created by pid {os.getpid()}")
-
-    def __del__(self):
-        # TODO: Remove after debugging satisfied
-        print(f"{self.__class__.__name__} told to die by pid {os.getpid()}")
-        pass
-
-    def get_server(self):
-        'Better than monkeypatching for now; merge into Server ultimately'
-        if self._state.value != State.INITIAL:
-            if self._state.value == State.STARTED:
-                raise ProcessError("Already started server")
-            elif self._state.value == State.SHUTDOWN:
-                raise ProcessError("Manager has shut down")
-            else:
-                raise ProcessError(
-                    "Unknown state {!r}".format(self._state.value))
-        return AugmentedServer(self._registry, self._address,
-                               self._authkey, self._serializer)
 
 
 class SharedList(SharedNDArray):
@@ -288,7 +197,7 @@ class SharedListProxy(BaseSharedListProxy):
         return sorted(self._exposed_[1:])
 
 
-SharedMemoryManager.register('list', SharedList, SharedListProxy)
+shared_memory.SharedMemoryManager.register('list', SharedList, SharedListProxy)
 
 
 def block_multiply(block_arr_tuple, block_size=1000):
@@ -300,75 +209,75 @@ def block_multiply(block_arr_tuple, block_size=1000):
 
 def block_multiply_2(data_tuple, block_size=1000):
     block, result_arr, arr = data_tuple
-    result_arr.array[:] = arr.array[block_size*block:block_size*(block+1)] * 4
-    print(result_arr.array[:2], block, block_size*block, block_size*(block+1), os.getpid(), id(result_arr.array))
-    print(arr.array[:2], block, block_size*block, block_size*(block+1), os.getpid(), id(arr.array))
+    result_arr[:] = arr[block_size*block:block_size*(block+1)] * 4
+    print(result_arr[:2], block, block_size*block, block_size*(block+1), os.getpid(), id(result_arr))
+    print(arr[:2], block, block_size*block, block_size*(block+1), os.getpid(), id(arr))
 
 
 def block_multiply_3(data_tuple):
     block, block_size, arr, result_arr = data_tuple
-    result_arr.array[:] = arr.array[block_size*block:block_size*(block+1)] * 4000
+    result_arr[:] = arr[block_size*block:block_size*(block+1)] * 4000
     return result_arr
 
 
 def block_exponential_4(data_tuple):
     block, block_size, shm_result_arr, shm_arr = data_tuple
-    shm_result_arr.array[:] = shm_arr.array[block_size*block:block_size*(block+1)] ** 0.001
+    shm_result_arr[:] = shm_arr[block_size*block:block_size*(block+1)] ** 0.001
     #shm_result_arr.flush()
-    #print(shm_result_arr.array[:2], block, block_size*block, block_size*(block+1), os.getpid(), id(shm_result_arr))
-    #print(shm_arr.array[:2], block, block_size*block, block_size*(block+1), os.getpid(), id(shm_arr))
+    #print(shm_result_arr[:2], block, block_size*block, block_size*(block+1), os.getpid(), id(shm_result_arr))
+    #print(shm_arr[:2], block, block_size*block, block_size*(block+1), os.getpid(), id(shm_arr))
 
 
 def main01():
-    shm = SharedMemoryTracker("unique_id_001")
+    shm = shared_memory.SharedMemoryTracker("unique_id_001")
     try:
         #local_r = np.random.random_sample((4000,))
         local_r = np.ones((4000,))
-        shared_r = shm.ndarray(local_r)
-        shared_results = [ shm.ndarray(1000, local_r.dtype) for i in range(4) ]
-        #shared_results = [ shm.ndarray(np.ones((1000,))) for i in range(4) ]
-        #block_multiply((0, shared_r.array), block_size=4000)
+        shared_r = shm.wrap(local_r)
+        shared_results = [ shm.wrap(np.ndarray(1000, local_r.dtype)) for i in range(4) ]
+        #shared_results = [ shm.wrap(np.ones((1000,))) for i in range(4) ]
+        #block_multiply((0, shared_r), block_size=4000)
         #with mp.Pool(processes=4) as p:
-        #    _results = p.map(block_multiply, enumerate([shared_r.array] * 4))
+        #    _results = p.map(block_multiply, enumerate([shared_r] * 4))
         with mp.Pool(processes=4) as p:
             _results = p.map(block_multiply_2, ((i, shared_results[i], shared_r) for i in range(4)))
-        print(shared_results[0].array[:10], "first 10 of", len(shared_results[0].array))
-        print(np.all(np.isclose(shared_results[0].array, local_r[:1000] * 4)))  # Should be True
-        print(np.any(shared_results[0].array == 4))                             # Should be True
-        print(id(local_r), id(shared_r.array), [id(x.array) for x in shared_results])
+        print(shared_results[0][:10], "first 10 of", len(shared_results[0]))
+        print(np.all(np.isclose(shared_results[0], local_r[:1000] * 4)))  # Should be True
+        print(np.any(shared_results[0] == 4))                             # Should be True
+        print(id(local_r), id(shared_r), [id(x) for x in shared_results])
     finally:
         shm.unlink()
 
 def main02():
-    smt = SharedMemoryTracker("unique_id_002")
+    smt = shared_memory.SharedMemoryTracker("unique_id_002")
     try:
         local_r = np.ones((4000,))
-        shared_r = smt.ndarray(local_r)
+        shared_r = smt.wrap(local_r)
         with mp.Pool(processes=1) as p:
-            results = p.map(block_multiply_3, ((i, 1000, shared_r, smt.ndarray((1000,), local_r.dtype)) for i in range(4)))
+            results = p.map(block_multiply_3, ((i, 1000, shared_r, smt.wrap(np.ndarray((1000,), local_r.dtype))) for i in range(4)))
         #with mp.Pool(processes=4) as p:
-        #    results = p.map(block_multiply_3, ((i, 1000, shared_r.array, smt) for i in range(4)))
-        combined_results = np.concatenate([shared_array.array for shared_array in results])
+        #    results = p.map(block_multiply_3, ((i, 1000, shared_r, smt) for i in range(4)))
+        combined_results = np.concatenate([shared_array for shared_array in results])
         print(combined_results[:10], "first 10 of", len(combined_results))
         print(np.all(np.isclose(combined_results, local_r * 4000)))  # Should be True
     finally:
         smt.unlink()
 
 def main04_parallel(scale=1000, iterations=400000, nprocs=2, blocks=8):
-    shm = SharedMemoryTracker("unique_id_004")
+    shm = shared_memory.SharedMemoryTracker("unique_id_004")
     try:
         local_r = np.random.random_sample((blocks * scale,))
-        shared_r = shm.ndarray(local_r)
-        shared_results = [ shm.ndarray(scale, local_r.dtype) for i in range(blocks) ]
+        shared_r = shm.wrap(local_r)
+        shared_results = [ shm.wrap(np.ndarray(scale, local_r.dtype)) for i in range(blocks) ]
         if nprocs > 0:
             with mp.Pool(processes=nprocs) as p:
                 _results = p.map(block_exponential_4, ((i % blocks, scale, shared_results[i % blocks], shared_r) for i in range(iterations)))
         else:
             _results = list(map(block_exponential_4, ((i % blocks, scale, shared_results[i % blocks], shared_r) for i in range(iterations))))
-        print(shared_results[0].array[:10], "first 10 of", len(shared_results[0].array))
-        print(np.all(np.isclose(shared_results[0].array, np.ones((scale,)))))  # Likely False
-        print(np.all(shared_results[0].array > 0.99))  # Should be True
-        print(id(local_r), id(shared_r.array), [id(x.array) for x in shared_results])
+        print(shared_results[0][:10], "first 10 of", len(shared_results[0]))
+        print(np.all(np.isclose(shared_results[0], np.ones((scale,)))))  # Likely False
+        print(np.all(shared_results[0] > 0.99))  # Should be True
+        print(id(local_r), id(shared_r), [id(x) for x in shared_results])
     finally:
         shm.unlink()
 
@@ -384,10 +293,10 @@ def main05():
     lookup_table = {}
     authkey = b'howdy'
     mp.current_process().authkey = authkey  # TODO: add this to multiprocessing docs regarding authkey
-    SharedMemoryManager.register("get_lookup_table", callable=lambda: lookup_table, proxytype=DictProxy)
+    shared_memory.SharedMemoryManager.register("get_lookup_table", callable=lambda: lookup_table, proxytype=DictProxy)
 
     if sys.argv[-1] == 'master':
-        m = SharedMemoryManager(address=('127.0.0.1', 5005), authkey=authkey)
+        m = shared_memory.SharedMemoryManager(address=('127.0.0.1', 5005), authkey=authkey)
         m.start()
         print(f"master running as pid {os.getpid()}")
 
@@ -396,7 +305,7 @@ def main05():
         lookup_table['w'] = w
 
     else:
-        m = SharedMemoryManager(address=('127.0.0.1', 5005), authkey=authkey)
+        m = shared_memory.SharedMemoryManager(address=('127.0.0.1', 5005), authkey=authkey)
         m.connect()
         print(f"remote running as pid {os.getpid()}")
 

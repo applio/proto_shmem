@@ -1,5 +1,6 @@
 from functools import reduce
 import mmap
+from multiprocessing.managers import DictProxy, SyncManager, Server
 import os
 import random
 import struct
@@ -585,3 +586,93 @@ class ShareableList:
                 return position
         else:
             raise ValueError(f"{value!r} not in this container")
+
+
+class SharedMemoryTracker:
+    "Manages one or more shared memory segments."
+
+    def __init__(self, name, segment_names=[]):
+        self.shared_memory_context_name = name
+        self.segment_names = segment_names
+
+    def register_segment(self, segment):
+        print(f"DBG Registering segment {segment.name!r} in pid {os.getpid()}")
+        self.segment_names.append(segment.name)
+
+    def destroy_segment(self, segment_name):
+        print(f"DBG Destroying segment {segment_name!r} in pid {os.getpid()}")
+        self.segment_names.remove(segment_name)
+        segment = SharedMemory(segment_name, size=1)
+        segment.close()
+        segment.unlink()
+
+    def unlink(self):
+        for segment_name in self.segment_names:
+            self.destroy_segment(segment_name)
+        self.segment_names[:] = []
+
+    def __del__(self):
+        print(f"DBG somebody called {self.__class__.__name__}.__del__: {os.getpid()}")
+        self.unlink()
+
+    def __getstate__(self):
+        return (self.shared_memory_context_name, self.segment_names)
+
+    def __setstate__(self, state):
+        self.__init__(*state)
+
+    def wrap(self, obj_exposing_buffer_protocol):
+        wrapped_obj = shareable_wrap(obj_exposing_buffer_protocol)
+        self.register_segment(wrapped_obj._shm)
+        return wrapped_obj
+
+
+class AugmentedServer(Server):
+    def __init__(self, *args, **kwargs):
+        Server.__init__(self, *args, **kwargs)
+        self.shared_memory_context = \
+            SharedMemoryTracker(f"shmm_{self.address}_{os.getpid()}")
+        print(f"DBG AugmentedServer started by pid {os.getpid()}")
+
+    def create(self, c, typeid, *args, **kwargs):
+        # Unless set up as a shared proxy, don't make shared_memory_context
+        # a standard part of kwargs.  This makes things easier for supplying
+        # simple functions.
+        if hasattr(self.registry[typeid][-1], "_shared_memory_proxy"):
+            kwargs['shared_memory_context'] = self.shared_memory_context
+        return Server.create(self, c, typeid, *args, **kwargs)
+
+    def shutdown(self, c):
+        self.shared_memory_context.unlink()
+        return Server.shutdown(self, c)
+
+
+class SharedMemoryManager(SyncManager):
+    """Like SyncManager but uses AugmentedServer instead of Server.
+
+    TODO: relocate/merge into managers submodule."""
+
+    _Server = AugmentedServer
+
+    def __init__(self, *args, **kwargs):
+        # TODO: Remove after debugging satisfied
+        SyncManager.__init__(self, *args, **kwargs)
+        print(f"{self.__class__.__name__} created by pid {os.getpid()}")
+
+    def __del__(self):
+        # TODO: Remove after debugging satisfied
+        print(f"{self.__class__.__name__} told to die by pid {os.getpid()}")
+        pass
+
+    def get_server(self):
+        'Better than monkeypatching for now; merge into Server ultimately'
+        if self._state.value != State.INITIAL:
+            if self._state.value == State.STARTED:
+                raise ProcessError("Already started server")
+            elif self._state.value == State.SHUTDOWN:
+                raise ProcessError("Manager has shut down")
+            else:
+                raise ProcessError(
+                    "Unknown state {!r}".format(self._state.value))
+        return AugmentedServer(self._registry, self._address,
+                               self._authkey, self._serializer)

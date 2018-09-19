@@ -43,3 +43,18 @@ def share_DataFrame_column(df, column):
     # Return a handle on the object in shared memory for tracking
     # purposes so that its shared memory segment may be released later.
     return shared_values
+
+
+def share_Series(series):
+    "Analog to share_DataFrame_column() but for a pandas Series object."
+
+    singleblkmgr = series._data
+
+    insitu_block = singleblkmgr.blocks[0]
+
+    assert insitu_block.dtype != np.dtype('O')
+
+    shared_values = shareable_wrap(insitu_block.values)
+    insitu_block.values = shared_values
+
+    return shared_values

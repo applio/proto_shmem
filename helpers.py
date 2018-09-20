@@ -31,7 +31,7 @@ def share_DataFrame_column(df, column):
     insitu_block = blkmgr.blocks[column_blocks_position]
 
     # Sharing an ndarray of objects is not supported.
-    assert insitu_block.dtype != np.dtype('O')
+    assert not insitu_block.dtype.str.endswith('O')
 
     # Take the existing ndarray and copy it into shared memory,
     # replacing it in the block with its "shared" equivalent which
@@ -52,7 +52,7 @@ def share_Series(series):
 
     insitu_block = singleblkmgr.blocks[0]
 
-    assert insitu_block.dtype != np.dtype('O')
+    assert not insitu_block.dtype.str.endswith('O')
 
     shared_values = shareable_wrap(insitu_block.values)
     insitu_block.values = shared_values

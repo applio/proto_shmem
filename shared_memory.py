@@ -74,145 +74,6 @@ class SharedMemory:
         return cls(*args, **kwargs)
 
 
-def shareable_wrap(
-    existing_obj=None,
-    shmem_name=None,
-    cls=None,
-    shape=(0,),
-    strides=None,
-    dtype=None,
-    format=None,
-    **kwargs
-):
-    augmented_kwargs = dict(kwargs)
-    extras = dict(shape=shape, strides=strides, dtype=dtype, format=format)
-    for key, value in extras.items():
-        if value is not None:
-            augmented_kwargs[key] = value
-
-    if existing_obj is not None:
-        existing_type = getattr(
-            existing_obj,
-            "_proxied_type",
-            type(existing_obj)
-        )
-
-        # TODO: replace use of reduce below with next 2 lines once available
-        #agg = existing_obj.itemsize
-        #size = [ agg := i * agg for i in existing_obj.shape ][-1]
-        size = reduce(
-            lambda x, y: x * y,
-            existing_obj.shape,
-            existing_obj.itemsize
-        )
-
-    else:
-        assert shmem_name is not None
-        existing_type = cls
-        size = 1
-
-    shm = SharedMemory(shmem_name, size=size)
-
-    class CustomShareableProxy(existing_type):
-
-        def __init__(self, *args, buffer=None, **kwargs):
-            # If copy method called, prevent recursion from replacing _shm.
-            if not hasattr(self, "_shm"):
-                self._shm = shm
-                self._proxied_type = existing_type
-            else:
-                # _proxied_type only used in pickling.
-                assert hasattr(self, "_proxied_type")
-            try:
-                existing_type.__init__(self, *args, **kwargs)
-            except:
-                pass
-
-        def __repr__(self):
-            if not hasattr(self, "_shm"):
-                return existing_type.__repr__(self)
-            formatted_pairs = (
-                "%s=%r" % kv for kv in self._build_state(self).items()
-            )
-            return f"{self.__class__.__name__}({', '.join(formatted_pairs)})"
-
-        #def __getstate__(self):
-        #    if not hasattr(self, "_shm"):
-        #        return existing_type.__getstate__(self)
-        #    state = self._build_state(self)
-        #    return state
-
-        #def __setstate__(self, state):
-        #    self.__init__(**state)
-
-        def __reduce__(self):
-            return (
-                shareable_wrap,
-                (
-                    None,
-                    self._shm.name,
-                    self._proxied_type,
-                    self.shape,
-                    self.strides,
-                    self.dtype.str if hasattr(self, "dtype") else None,
-                    getattr(self, "format", None),
-                ),
-            )
-
-        def copy(self):
-            dupe = existing_type.copy(self)
-            if not hasattr(dupe, "_shm"):
-                dupe = shareable_wrap(dupe)
-            return dupe
-
-        @staticmethod
-        def _build_state(existing_obj, generics_only=False):
-            state = {
-                "shape": existing_obj.shape,
-                "strides": existing_obj.strides,
-            }
-            try:
-                state["dtype"] = existing_obj.dtype
-            except AttributeError:
-                try:
-                    state["format"] = existing_obj.format
-                except AttributeError:
-                    pass
-            if not generics_only:
-                try:
-                    state["shmem_name"] = existing_obj._shm.name
-                    state["cls"] = existing_type
-                except AttributeError:
-                    pass
-            return state
-
-    proxy_type = type(
-        f"{existing_type.__name__}Shareable",
-        CustomShareableProxy.__bases__,
-        dict(CustomShareableProxy.__dict__),
-    )
-
-    if existing_obj is not None:
-        try:
-            proxy_obj = proxy_type(
-                buffer=shm.buf,
-                **proxy_type._build_state(existing_obj)
-            )
-        except Exception:
-            proxy_obj = proxy_type(
-                buffer=shm.buf,
-                **proxy_type._build_state(existing_obj, True)
-            )
-
-        mveo = memoryview(existing_obj)
-        proxy_obj._shm.buf[:mveo.nbytes] = mveo.tobytes()
-
-    else:
-        proxy_obj = proxy_type(buffer=shm.buf, **augmented_kwargs)
-
-    return proxy_obj
-
-
 def alt_shareable_wrap(existing_type_or_obj, additional_excluded_methods=[]):
     if isinstance(existing_type_or_obj, type):
         existing_type = existing_type_or_obj
@@ -244,7 +105,7 @@ def alt_shareable_wrap(existing_type_or_obj, additional_excluded_methods=[]):
     class CustomShareableWrap(ShareableWrappedObject, **kept_dunders):
         pass
 
-    CustomShareableWrap.__name__ = f"shareable_wrap({existing_type.__name__})"
+    CustomShareableWrap.__name__ = f"alt_shareable_wrap({existing_type.__name__})"
 
     if existing_obj is None:
         return CustomShareableWrap
@@ -619,11 +480,6 @@ class SharedMemoryTracker:
 
     def __setstate__(self, state):
         self.__init__(*state)
-
-    def wrap(self, obj_exposing_buffer_protocol):
-        wrapped_obj = shareable_wrap(obj_exposing_buffer_protocol)
-        self.register_segment(wrapped_obj._shm)
-        return wrapped_obj
 
 
 class AugmentedServer(Server):
